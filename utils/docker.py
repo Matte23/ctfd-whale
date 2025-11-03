@@ -50,7 +50,7 @@ class DockerUtils:
 
     @staticmethod
     def add_container(container):
-        use_swarm = get_config("whale:docker_use_swarm", "true").lower() == "true"
+        use_swarm = get_config("whale:docker_use_swarm", False)
 
         if container.challenge.docker_image.startswith("{"):
             if use_swarm:
@@ -266,7 +266,7 @@ class DockerUtils:
     @staticmethod
     def remove_container(container):
         whale_id = f"{container.user_id}-{container.uuid}"
-        use_swarm = get_config("whale:docker_use_swarm", "true").lower() == "true"
+        use_swarm = get_config("whale:docker_use_swarm", False)
 
         if use_swarm:
             for s in DockerUtils.client.services.list(
