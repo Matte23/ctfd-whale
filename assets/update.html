@@ -81,6 +81,22 @@
                value="{{ challenge.cpu_limit }}" required>
     </div>
     <div class="form-group">
+        <label for="value">Docker Init<br>
+            <small class="form-text text-muted">
+                Enable Docker init
+            </small>
+        </label>
+        <input type="checkbox" name="init" value="{{ challenge.init }}" value="false">
+    </div>
+    <div class="form-group">
+        <label for="value">Privileged<br>
+            <small class="form-text text-muted">
+                Run container in privileged mode
+            </small>
+        </label>
+        <input type="checkbox" name="privileged" value="{{ challenge.privileged }}" value="false">
+    </div>
+    <div class="form-group">
         <label for="value">Score Type<br>
             <small class="form-text text-muted">
                 Decide it use dynamic score or not
