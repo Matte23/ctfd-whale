@@ -37,7 +37,7 @@ class DynamicValueDockerChallenge(BaseChallenge):
     @classmethod
     def read(cls, challenge):
         challenge = DynamicDockerChallenge.query.filter_by(id=challenge.id).first()
-
+        data = super().read(challenge)
         data.update(
             {
                 "initial": challenge.initial,
