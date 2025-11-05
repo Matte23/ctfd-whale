@@ -1,8 +1,7 @@
 import fcntl
 import warnings
 
-import requests
-from flask import Blueprint, render_template, session, current_app, request
+from flask import Blueprint, render_template, session, request
 from flask_apscheduler import APScheduler
 
 from CTFd.api import CTFd_API_v1
@@ -26,33 +25,23 @@ from .utils.routers import Router
 
 
 def load(app):
-    app.config['RESTX_ERROR_404_HELP'] = False
+    app.config["RESTX_ERROR_404_HELP"] = False
     # upgrade()
-    plugin_name = __name__.split('.')[-1]
-    set_config('whale:plugin_name', plugin_name)
+    plugin_name = __name__.split(".")[-1]
+    set_config("whale:plugin_name", plugin_name)
     app.db.create_all()
     if not get_config("whale:setup"):
         setup_default_configs()
 
     register_plugin_assets_directory(
-        app, base_path=f"/plugins/{plugin_name}/assets",
-        endpoint='plugins.ctfd-whale.assets'
+        app,
+        base_path=f"/plugins/{plugin_name}/assets",
+        endpoint="plugins.ctfd-whale.assets",
     )
     register_admin_plugin_menu_bar(
-        title='Whale',
-        route='/plugins/ctfd-whale/admin/settings'
+        title="Whale", route="/plugins/ctfd-whale/admin/settings"
     )
 
-    DynamicValueDockerChallenge.templates = {
-        "create": f"/plugins/{plugin_name}/assets/create.html",
-        "update": f"/plugins/{plugin_name}/assets/update.html",
-        "view": f"/plugins/{plugin_name}/assets/view.html",
-    }
-    DynamicValueDockerChallenge.scripts = {
-        "create": "/plugins/ctfd-whale/assets/create.js",
-        "update": "/plugins/ctfd-whale/assets/update.js",
-        "view": "/plugins/ctfd-whale/assets/view.js",
-    }
     CHALLENGE_CLASSES["dynamic_docker"] = DynamicValueDockerChallenge
 
     page_blueprint = Blueprint(
@@ -60,14 +49,14 @@ def load(app):
         __name__,
         template_folder="templates",
         static_folder="assets",
-        url_prefix="/plugins/ctfd-whale"
+        url_prefix="/plugins/ctfd-whale",
     )
     CTFd_API_v1.add_namespace(admin_namespace, path="/plugins/ctfd-whale/admin")
     CTFd_API_v1.add_namespace(user_namespace, path="/plugins/ctfd-whale")
 
     worker_config_commit = None
 
-    @page_blueprint.route('/admin/settings')
+    @page_blueprint.route("/admin/settings")
     @admins_only
     def admin_list_configs():
         nonlocal worker_config_commit
@@ -77,20 +66,22 @@ def load(app):
             DockerUtils.init()
             Router.reset()
             set_config("whale:refresh", "false")
-        return render_template('whale_config.html', errors=errors)
+        return render_template("whale_config.html", errors=errors)
 
     @page_blueprint.route("/admin/containers")
     @admins_only
     def admin_list_containers():
         result = AdminContainers.get()
-        view_mode = request.args.get('mode', session.get('view_mode', 'list'))
-        session['view_mode'] = view_mode
-        return render_template("whale_containers.html",
-                               plugin_name=plugin_name,
-                               containers=result['data']['containers'],
-                               pages=result['data']['pages'],
-                               curr_page=abs(request.args.get("page", 1, type=int)),
-                               curr_page_start=result['data']['page_start'])
+        view_mode = request.args.get("mode", session.get("view_mode", "list"))
+        session["view_mode"] = view_mode
+        return render_template(
+            "whale_containers.html",
+            plugin_name=plugin_name,
+            containers=result["data"]["containers"],
+            pages=result["data"]["pages"],
+            curr_page=abs(request.args.get("page", 1, type=int)),
+            curr_page_start=result["data"]["page_start"],
+        )
 
     def auto_clean_container():
         with app.app_context():
@@ -115,8 +106,10 @@ def load(app):
         scheduler.init_app(app)
         scheduler.start()
         scheduler.add_job(
-            id='whale-auto-clean', func=auto_clean_container,
-            trigger="interval", seconds=10
+            id="whale-auto-clean",
+            func=auto_clean_container,
+            trigger="interval",
+            seconds=10,
         )
 
         print("[CTFd Whale] Started successfully")
