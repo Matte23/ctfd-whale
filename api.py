@@ -113,7 +113,7 @@ class UserContainers(Resource):
 
         challenge_id = request.args.get("challenge_id")
         challenge = DynamicDockerChallenge.query.filter_by(
-            challenge_id=challenge.id
+            challenge_id=challenge_id
         ).first()
         flag_template = ""
 
