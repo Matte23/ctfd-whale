@@ -112,9 +112,7 @@ class UserContainers(Resource):
             abort(403, "Max container count exceed.", success=False)
 
         challenge_id = request.args.get("challenge_id")
-        challenge = DynamicDockerChallenge.query.filter_by(
-            challenge_id=challenge_id
-        ).first()
+        challenge = DynamicDockerChallenge.query.filter_by(id=challenge_id).first()
         flag_template = ""
 
         if challenge.flag_template != "":
