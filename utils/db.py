@@ -7,8 +7,10 @@ from ..models import WhaleContainer, WhaleRedirectTemplate
 
 class DBContainer:
     @staticmethod
-    def create_container_record(user_id, challenge_id):
-        container = WhaleContainer(user_id=user_id, challenge_id=challenge_id)
+    def create_container_record(user_id, challenge_id, flag):
+        container = WhaleContainer(
+            user_id=user_id, challenge_id=challenge_id, flag=flag
+        )
         db.session.add(container)
         db.session.commit()
 
@@ -39,8 +41,8 @@ class DBContainer:
 
         q = db.session.query(WhaleContainer)
         q = q.filter(
-            WhaleContainer.start_time <
-            datetime.datetime.now() - datetime.timedelta(seconds=timeout)
+            WhaleContainer.start_time
+            < datetime.datetime.now() - datetime.timedelta(seconds=timeout)
         )
         return q.all()
 
@@ -50,8 +52,8 @@ class DBContainer:
 
         q = db.session.query(WhaleContainer)
         q = q.filter(
-            WhaleContainer.start_time >=
-            datetime.datetime.now() - datetime.timedelta(seconds=timeout)
+            WhaleContainer.start_time
+            >= datetime.datetime.now() - datetime.timedelta(seconds=timeout)
         )
         return q.all()
 
@@ -66,8 +68,8 @@ class DBContainer:
 
         q = db.session.query(WhaleContainer)
         q = q.filter(
-            WhaleContainer.start_time >=
-            datetime.datetime.now() - datetime.timedelta(seconds=timeout)
+            WhaleContainer.start_time
+            >= datetime.datetime.now() - datetime.timedelta(seconds=timeout)
         )
         q = q.slice(page_start, page_end)
         return q.all()
@@ -78,8 +80,8 @@ class DBContainer:
 
         q = db.session.query(WhaleContainer)
         q = q.filter(
-            WhaleContainer.start_time >=
-            datetime.datetime.now() - datetime.timedelta(seconds=timeout)
+            WhaleContainer.start_time
+            >= datetime.datetime.now() - datetime.timedelta(seconds=timeout)
         )
         return q.count()
 
@@ -93,9 +95,7 @@ class DBRedirectTemplate:
     def create_template(name, access_template, frp_template):
         if WhaleRedirectTemplate.query.filter_by(key=name).first():
             return  # already existed
-        db.session.add(WhaleRedirectTemplate(
-            name, access_template, frp_template
-        ))
+        db.session.add(WhaleRedirectTemplate(name, access_template, frp_template))
         db.session.commit()
 
     @staticmethod

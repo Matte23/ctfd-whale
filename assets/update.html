@@ -34,6 +34,14 @@
         <input type="number" class="form-control chal-minimum" name="minimum" value="{{ challenge.minimum }}" required>
     </div>
     <div class="form-group">
+        <label for="value">Flag Template<br>
+            <small class="form-text text-muted">
+                The template used to generate the flag
+            </small>
+        </label>
+        <input type="text" class="form-control" name="flag_template" placeholder="Enter a Jinja2 template" required value="{{ challenge.flag_template }}">
+    </div>
+    <div class="form-group">
         <label for="value">Docker Image<br>
             <small class="form-text text-muted">
                 The docker image used to deploy
