@@ -5,11 +5,13 @@ from CTFd.utils import get_config
 from .db import DBContainer, db
 from .docker import DockerUtils
 from .routers import Router
+from .flags import TemplateFlagUtils
 
 
 class ControlUtil:
     @staticmethod
-    def try_add_container(user_id, challenge_id, flag):
+    def try_add_container(user_id: int, challenge_id: int):
+        flag = TemplateFlagUtils.generate_flag(challenge_id)
         container = DBContainer.create_container_record(user_id, challenge_id, flag)
         try:
             DockerUtils.add_container(container)

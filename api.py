@@ -1,11 +1,7 @@
-import random
-import uuid
 from datetime import datetime
 
 from flask import request
 from flask_restx import Namespace, Resource, abort
-
-from jinja2 import Template
 
 from CTFd.utils import get_config
 from CTFd.utils import user as current_user
@@ -15,7 +11,6 @@ from .decorators import challenge_visible, frequency_limited
 from .utils.control import ControlUtil
 from .utils.db import DBContainer
 from .utils.routers import Router
-from .models import DynamicDockerChallenge
 
 admin_namespace = Namespace("ctfd-whale-admin")
 user_namespace = Namespace("ctfd-whale-user")
@@ -112,22 +107,8 @@ class UserContainers(Resource):
             abort(403, "Max container count exceed.", success=False)
 
         challenge_id = request.args.get("challenge_id")
-        challenge = DynamicDockerChallenge.query.filter_by(id=challenge_id).first()
-        flag_template = ""
-
-        if challenge.flag_template != "":
-            flag_template = challenge.flag_template
-        else:
-            flag_template = get_config(
-                "whale:template_chall_flag", '{{ "flag{"+uuid.uuid4()|string+"}" }}'
-            )
-
-        flag = Template(flag_template).render(
-            uuid=uuid, random=random, get_config=get_config
-        )
-
         result, message = ControlUtil.try_add_container(
-            user_id=user_id, challenge_id=challenge_id, flag=flag
+            user_id=user_id, challenge_id=challenge_id
         )
         if not result:
             abort(403, message, success=False)
