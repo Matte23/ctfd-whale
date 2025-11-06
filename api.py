@@ -6,9 +6,8 @@ from CTFd.utils.decorators import admins_only, authed_only
 from flask import request
 from flask_restx import Namespace, Resource, abort
 
-from flag import PersonalFlag
-
 from .decorators import challenge_visible, frequency_limited
+from .flag import PersonalFlag
 from .utils.control import ControlUtil
 from .utils.db import DBContainer
 from .utils.routers import Router
