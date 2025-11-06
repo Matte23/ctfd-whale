@@ -7,8 +7,7 @@ import docker
 from CTFd.utils import get_config
 from flask import current_app
 
-from models import WhaleContainer
-
+from ..models import WhaleContainer
 from .cache import CacheProvider
 from .exceptions import WhaleError
 

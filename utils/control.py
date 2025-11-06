@@ -3,11 +3,8 @@ import traceback
 
 from CTFd.utils import get_config
 
-from models import WhaleContainer
-
 from .db import DBContainer, db
 from .docker import DockerUtils
-from .flags import TemplateFlagUtils
 from .routers import Router
 
 
