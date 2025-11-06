@@ -1,11 +1,6 @@
-from CTFd.models import (
-    Flags,
-    db,
-)
+from CTFd.models import db
 from CTFd.plugins.challenges import BaseChallenge
 from CTFd.plugins.dynamic_challenges import DynamicValueChallenge
-from CTFd.plugins.flags import get_flag_class
-from CTFd.utils import user as current_user
 from flask import Blueprint
 
 from .models import DynamicDockerChallenge, WhaleContainer
@@ -73,32 +68,6 @@ class DynamicValueDockerChallenge(BaseChallenge):
 
         db.session.commit()
         return challenge
-
-    @classmethod
-    def attempt(cls, challenge, request):
-        data = request.form or request.get_json()
-        submission = data["submission"].strip()
-
-        flags = Flags.query.filter_by(challenge_id=challenge.id).all()
-
-        if len(flags) > 0:
-            for flag in flags:
-                if get_flag_class(flag.type).compare(flag, submission):
-                    return True, "Correct"
-            return False, "Incorrect"
-        else:
-            user_id = current_user.get_current_user().id
-            q = db.session.query(WhaleContainer)
-            q = q.filter(WhaleContainer.user_id == user_id)
-            q = q.filter(WhaleContainer.challenge_id == challenge.id)
-            records = q.all()
-            if len(records) == 0:
-                return False, "Please solve it during the container is running"
-
-            container = records[0]
-            if container.flag == submission:
-                return True, "Correct"
-            return False, "Incorrect"
 
     @classmethod
     def solve(cls, user, team, challenge, request):

@@ -66,7 +66,7 @@ class WhaleContainer(db.Model):
     status = db.Column(db.Integer, default=1)
     uuid = db.Column(db.String(256))
     port = db.Column(db.Integer, nullable=True, default=0)
-    flag_id = db.Column(db.Integer, db.ForeignKey("flags.id", ondelete="CASCADE"))
+    flag_id = db.Column(db.Integer, db.ForeignKey("flags.id"))
 
     # Relationships
     user = db.relationship(
@@ -93,7 +93,7 @@ class WhaleContainer(db.Model):
         self.start_time = datetime.now()
         self.renew_count = 0
         self.uuid = str(uuid.uuid4())
-        self.flag = flag_id
+        self.flag_id = flag_id
 
     @property
     def user_access(self):
