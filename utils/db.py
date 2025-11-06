@@ -2,14 +2,15 @@ import datetime
 
 from CTFd.models import db
 from CTFd.utils import get_config
+
 from ..models import WhaleContainer, WhaleRedirectTemplate
 
 
 class DBContainer:
     @staticmethod
-    def create_container_record(user_id, challenge_id, flag):
+    def create_container_record(user_id: int, challenge_id: int, flag_id: int):
         container = WhaleContainer(
-            user_id=user_id, challenge_id=challenge_id, flag=flag
+            user_id=user_id, challenge_id=challenge_id, flag_id=flag_id
         )
         db.session.add(container)
         db.session.commit()
@@ -17,19 +18,19 @@ class DBContainer:
         return container
 
     @staticmethod
-    def get_current_containers(user_id):
+    def get_current_containers(user_id: int):
         q = db.session.query(WhaleContainer)
         q = q.filter(WhaleContainer.user_id == user_id)
         return q.first()
 
     @staticmethod
-    def get_container_by_port(port):
+    def get_container_by_port(port: int):
         q = db.session.query(WhaleContainer)
         q = q.filter(WhaleContainer.port == port)
         return q.first()
 
     @staticmethod
-    def remove_container_record(user_id):
+    def remove_container_record(user_id: int):
         q = db.session.query(WhaleContainer)
         q = q.filter(WhaleContainer.user_id == user_id)
         q.delete()
@@ -63,7 +64,7 @@ class DBContainer:
         return q.all()
 
     @staticmethod
-    def get_all_alive_container_page(page_start, page_end):
+    def get_all_alive_container_page(page_start: int, page_end: int):
         timeout = int(get_config("whale:docker_timeout", "3600"))
 
         q = db.session.query(WhaleContainer)

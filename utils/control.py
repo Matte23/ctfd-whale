@@ -2,17 +2,19 @@ import datetime
 import traceback
 
 from CTFd.utils import get_config
+
+from models import WhaleContainer
+
 from .db import DBContainer, db
 from .docker import DockerUtils
-from .routers import Router
 from .flags import TemplateFlagUtils
+from .routers import Router
 
 
 class ControlUtil:
     @staticmethod
-    def try_add_container(user_id: int, challenge_id: int):
-        flag = TemplateFlagUtils.generate_flag(challenge_id)
-        container = DBContainer.create_container_record(user_id, challenge_id, flag)
+    def try_add_container(user_id: int, challenge_id: int, flag_id: int):
+        container = DBContainer.create_container_record(user_id, challenge_id, flag_id)
         try:
             DockerUtils.add_container(container)
         except Exception as e:
@@ -27,7 +29,7 @@ class ControlUtil:
         return True, "Container created"
 
     @staticmethod
-    def try_remove_container(user_id):
+    def try_remove_container(user_id: int):
         container = DBContainer.get_current_containers(user_id=user_id)
         if not container:
             return False, "No such container"
@@ -44,7 +46,7 @@ class ControlUtil:
         return False, "Failed when destroying instance, please contact admin!"
 
     @staticmethod
-    def try_renew_container(user_id):
+    def try_renew_container(user_id: int):
         container = DBContainer.get_current_containers(user_id)
         if not container:
             return False, "No such container"

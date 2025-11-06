@@ -1,14 +1,14 @@
-from flask import Blueprint
-
 from CTFd.models import (
-    db,
     Flags,
+    db,
 )
 from CTFd.plugins.challenges import BaseChallenge
 from CTFd.plugins.dynamic_challenges import DynamicValueChallenge
 from CTFd.plugins.flags import get_flag_class
 from CTFd.utils import user as current_user
-from .models import WhaleContainer, DynamicDockerChallenge
+from flask import Blueprint
+
+from .models import DynamicDockerChallenge, WhaleContainer
 from .utils.control import ControlUtil
 
 

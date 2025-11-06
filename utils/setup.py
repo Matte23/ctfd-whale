@@ -1,6 +1,7 @@
 from CTFd.utils import set_config
+from CTFd.models import db
 
-from ..models import WhaleRedirectTemplate, db
+from ..models import WhaleRedirectTemplate
 
 
 def setup_default_configs():
@@ -29,8 +30,8 @@ def setup_default_configs():
         WhaleRedirectTemplate(
             "http",
             "http://{{ container.http_subdomain }}."
-            '{{ get_config("whale:frp_http_domain_suffix", "") }}'
-            '{% if get_config("whale:frp_http_port", "80") != 80 %}:{{ get_config("whale:frp_http_port") }}{% endif %}/',
+            + '{{ get_config("whale:frp_http_domain_suffix", "") }}'
+            + '{% if get_config("whale:frp_http_port", "80") != 80 %}:{{ get_config("whale:frp_http_port") }}{% endif %}/',
             """
 [http_{{ container.user_id|string }}-{{ container.uuid }}]
 type = http

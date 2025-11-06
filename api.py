@@ -1,11 +1,12 @@
 from datetime import datetime
 
-from flask import request
-from flask_restx import Namespace, Resource, abort
-
 from CTFd.utils import get_config
 from CTFd.utils import user as current_user
 from CTFd.utils.decorators import admins_only, authed_only
+from flask import request
+from flask_restx import Namespace, Resource, abort
+
+from flag import PersonalFlag
 
 from .decorators import challenge_visible, frequency_limited
 from .utils.control import ControlUtil
@@ -107,8 +108,11 @@ class UserContainers(Resource):
             abort(403, "Max container count exceed.", success=False)
 
         challenge_id = request.args.get("challenge_id")
-        result, message = ControlUtil.try_add_container(
+        flag_id = PersonalFlag.create_if_missing(
             user_id=user_id, challenge_id=challenge_id
+        )
+        result, message = ControlUtil.try_add_container(
+            user_id=user_id, challenge_id=challenge_id, flag_id=flag_id
         )
         if not result:
             abort(403, message, success=False)
