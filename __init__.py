@@ -13,10 +13,9 @@ from CTFd.utils.decorators import admins_only
 from flask import Blueprint, render_template, request, session
 from flask_apscheduler import APScheduler
 
-from flag import PersonalFlag
-
 from .api import AdminContainers, admin_namespace, user_namespace
 from .challenge_type import DynamicValueDockerChallenge
+from .flag import PersonalFlag
 from .utils.checks import WhaleChecks
 from .utils.control import ControlUtil
 from .utils.db import DBContainer
