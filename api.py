@@ -3,11 +3,12 @@ from datetime import datetime
 from CTFd.utils import get_config
 from CTFd.utils import user as current_user
 from CTFd.utils.decorators import admins_only, authed_only
+from CTFd.plugins.ctfd_cheaters import create_flag_if_missing
 from flask import request
 from flask_restx import Namespace, Resource, abort
 
+from .utils.flags import generate_flag
 from .decorators import challenge_visible, frequency_limited
-from .flag import PersonalFlag
 from .utils.control import ControlUtil
 from .utils.db import DBContainer
 from .utils.routers import Router
@@ -106,9 +107,10 @@ class UserContainers(Resource):
         if int(get_config("whale:docker_max_container_count")) <= int(current_count):
             abort(403, "Max container count exceed.", success=False)
 
-        challenge_id = request.args.get("challenge_id")
-        flag_id = PersonalFlag.create_if_missing(
-            user_id=user_id, challenge_id=challenge_id
+        challenge_id = int(request.args.get("challenge_id"))
+        flag_content = generate_flag(challenge_id)
+        flag_id = create_flag_if_missing(
+            user_id=user_id, challenge_id=challenge_id, flag_content=flag_content
         )
         result, message = ControlUtil.try_add_container(
             user_id=user_id, challenge_id=challenge_id, flag_id=flag_id

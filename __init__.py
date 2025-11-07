@@ -7,7 +7,6 @@ from CTFd.plugins import (
     register_plugin_assets_directory,
 )
 from CTFd.plugins.challenges import CHALLENGE_CLASSES
-from CTFd.plugins.flags import FLAG_CLASSES
 from CTFd.utils import get_config, set_config
 from CTFd.utils.decorators import admins_only
 from flask import Blueprint, render_template, request, session
@@ -15,7 +14,6 @@ from flask_apscheduler import APScheduler
 
 from .api import AdminContainers, admin_namespace, user_namespace
 from .challenge_type import DynamicValueDockerChallenge
-from .flag import PersonalFlag
 from .utils.checks import WhaleChecks
 from .utils.control import ControlUtil
 from .utils.db import DBContainer
@@ -44,7 +42,6 @@ def load(app):
     )
 
     CHALLENGE_CLASSES["dynamic_docker"] = DynamicValueDockerChallenge
-    FLAG_CLASSES["personal"] = PersonalFlag
 
     page_blueprint = Blueprint(
         "ctfd-whale",
