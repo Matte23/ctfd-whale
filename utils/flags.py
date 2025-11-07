@@ -5,7 +5,7 @@ import uuid
 from CTFd.utils import get_config
 from jinja2 import Template
 
-from ..models import DynamicDockerChallenge
+from ..models import DockerChallenges
 
 
 def random_string(length: int = 16):
@@ -14,7 +14,7 @@ def random_string(length: int = 16):
 
 @staticmethod
 def generate_flag(challenge_id: int):
-    challenge = DynamicDockerChallenge.query.filter_by(id=challenge_id).first()
+    challenge = DockerChallenges.query.filter_by(id=challenge_id).first()
     flag_template = ""
 
     if challenge.flag_template != "":

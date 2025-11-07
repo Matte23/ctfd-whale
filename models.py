@@ -1,8 +1,7 @@
 import uuid
 from datetime import datetime
 
-from CTFd.models import db
-from CTFd.plugins.dynamic_challenges import DynamicChallenge
+from CTFd.models import db, Challenges
 from CTFd.utils import get_config
 from jinja2 import Template
 
@@ -33,18 +32,17 @@ class WhaleRedirectTemplate(db.Model):
         return "<WhaleRedirectTemplate {0}>".format(self.key)
 
 
-class DynamicDockerChallenge(DynamicChallenge):
-    __mapper_args__ = {"polymorphic_identity": "dynamic_docker"}
+class DockerChallenges(Challenges):
+    __mapper_args__ = {"polymorphic_identity": "docker"}
     id = db.Column(
         db.Integer,
-        db.ForeignKey("dynamic_challenge.id", ondelete="CASCADE"),
+        db.ForeignKey("challenges.id", ondelete="CASCADE"),
         primary_key=True,
     )
 
     flag_template = db.Column(db.Text, default="")
     memory_limit = db.Column(db.Text, default="128m")
     cpu_limit = db.Column(db.Float, default=0.5)
-    dynamic_score = db.Column(db.Integer, default=0)
     init = db.Column(db.Boolean, default=False)
     privileged = db.Column(db.Boolean, default=False)
 
@@ -54,7 +52,7 @@ class DynamicDockerChallenge(DynamicChallenge):
 
     def __init__(self, *args, **kwargs):
         kwargs["initial"] = kwargs["value"]
-        super(DynamicDockerChallenge, self).__init__(**kwargs)
+        super(DockerChallenges, self).__init__(**kwargs)
 
 
 class WhaleContainer(db.Model):
@@ -73,7 +71,7 @@ class WhaleContainer(db.Model):
         "Users", foreign_keys="WhaleContainer.user_id", lazy="select"
     )
     challenge = db.relationship(
-        "DynamicDockerChallenge",
+        "DockerChallenges",
         foreign_keys="WhaleContainer.challenge_id",
         lazy="select",
     )

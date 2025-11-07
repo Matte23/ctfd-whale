@@ -1,15 +1,13 @@
-from CTFd.models import db
 from CTFd.plugins.challenges import BaseChallenge
-from CTFd.plugins.dynamic_challenges import DynamicValueChallenge
 from flask import Blueprint
 
-from .models import DynamicDockerChallenge, WhaleContainer
+from .models import WhaleContainer, DockerChallenges
 from .utils.control import ControlUtil
 
 
-class DynamicValueDockerChallenge(BaseChallenge):
-    id = "dynamic_docker"  # Unique identifier used to register challenges
-    name = "dynamic_docker"  # Name of a challenge type
+class DockerChallenge(BaseChallenge):
+    id = "docker"  # Unique identifier used to register challenges
+    name = "docker"  # Name of a challenge type
     templates = {
         "create": "/plugins/ctfd-whale/assets/create.html",
         "update": "/plugins/ctfd-whale/assets/update.html",
@@ -20,6 +18,7 @@ class DynamicValueDockerChallenge(BaseChallenge):
         "update": "/plugins/ctfd-whale/assets/update.js",
         "view": "/plugins/ctfd-whale/assets/view.js",
     }
+    route = "/plugins/ctfd-whale/assets/"
     # Blueprint used to access the static_folder directory.
     blueprint = Blueprint(
         "ctfd-whale-challenge",
@@ -27,54 +26,7 @@ class DynamicValueDockerChallenge(BaseChallenge):
         template_folder="templates",
         static_folder="assets",
     )
-    challenge_model = DynamicDockerChallenge
-
-    @classmethod
-    def read(cls, challenge):
-        challenge = DynamicDockerChallenge.query.filter_by(id=challenge.id).first()
-        data = super().read(challenge)
-        data.update(
-            {
-                "initial": challenge.initial,
-                "decay": challenge.decay,
-                "minimum": challenge.minimum,
-                "function": challenge.function,
-                "memory_limit": challenge.memory_limit,
-                "cpu_limit": challenge.cpu_limit,
-                "dynamic_score": challenge.dynamic_score,
-                "init": challenge.init,
-                "privileged": challenge.privileged,
-                "docker_image": challenge.docker_image,
-                "redirect_type": challenge.redirect_type,
-                "redirect_port": challenge.redirect_port,
-            }
-        )
-        return data
-
-    @classmethod
-    def update(cls, challenge, request):
-        data = request.form or request.get_json()
-
-        for attr, value in data.items():
-            # We need to set these to floats so that the next operations don't operate on strings
-            if attr in ("initial", "minimum", "decay"):
-                value = float(value)
-            if attr == "dynamic_score":
-                value = int(value)
-            setattr(challenge, attr, value)
-
-        if challenge.dynamic_score == 1:
-            return DynamicValueChallenge.calculate_value(challenge)
-
-        db.session.commit()
-        return challenge
-
-    @classmethod
-    def solve(cls, user, team, challenge, request):
-        super().solve(user, team, challenge, request)
-
-        if challenge.dynamic_score == 1:
-            DynamicValueChallenge.calculate_value(challenge)
+    challenge_model = DockerChallenges
 
     @classmethod
     def delete(cls, challenge):

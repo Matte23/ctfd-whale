@@ -13,7 +13,7 @@ from flask import Blueprint, render_template, request, session
 from flask_apscheduler import APScheduler
 
 from .api import AdminContainers, admin_namespace, user_namespace
-from .challenge_type import DynamicValueDockerChallenge
+from .challenge_type import DockerChallenge
 from .utils.checks import WhaleChecks
 from .utils.control import ControlUtil
 from .utils.db import DBContainer
@@ -38,10 +38,10 @@ def load(app):
         endpoint="plugins.ctfd-whale.assets",
     )
     register_admin_plugin_menu_bar(
-        title="Whale", route="/plugins/ctfd-whale/admin/settings"
+        title="Docker", route="/plugins/ctfd-whale/admin/settings"
     )
 
-    CHALLENGE_CLASSES["dynamic_docker"] = DynamicValueDockerChallenge
+    CHALLENGE_CLASSES["docker"] = DockerChallenge
 
     page_blueprint = Blueprint(
         "ctfd-whale",
