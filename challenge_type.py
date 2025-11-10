@@ -1,7 +1,7 @@
 from CTFd.plugins.challenges import BaseChallenge
 from flask import Blueprint
 
-from .models import WhaleContainer, DockerChallenges
+from .models import DockerChallenges, WhaleContainer
 from .utils.control import ControlUtil
 
 

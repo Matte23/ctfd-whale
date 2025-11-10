@@ -1,16 +1,16 @@
 from datetime import datetime
 
+from CTFd.plugins.ctfd_cheaters import create_flag_if_missing
 from CTFd.utils import get_config
 from CTFd.utils import user as current_user
 from CTFd.utils.decorators import admins_only, authed_only
-from CTFd.plugins.ctfd_cheaters import create_flag_if_missing
 from flask import request
 from flask_restx import Namespace, Resource, abort
 
-from .utils.flags import generate_flag
 from .decorators import challenge_visible, frequency_limited
 from .utils.control import ControlUtil
 from .utils.db import DBContainer
+from .utils.flags import generate_flag
 from .utils.routers import Router
 
 admin_namespace = Namespace("ctfd-whale-admin")
@@ -78,13 +78,9 @@ class UserContainers(Resource):
         c = (
             container.challenge
         )  # build a url for quick jump. todo: escape dash in categories and names.
-        link = f'<a target="_blank" href="/challenges#{c.category}-{c.name}-{c.id}">{c.name}</a>'
+        # link = f'<a target="_blank" href="/challenges#{c.category}-{c.name}-{c.id}">{c.name}</a>'
         if int(container.challenge_id) != int(challenge_id):
-            return abort(
-                403,
-                f"Container already started but not from this challenge ({link})",
-                success=False,
-            )
+            return {"success": True, "data": {}}
         return {
             "success": True,
             "data": {
