@@ -13,7 +13,16 @@ def test_admin_settings_page(app):
     with login_as_user(app, name="admin") as admin:
         r = admin.get("/plugins/ctfd-whale/admin/settings")
         assert r.status_code == 200
-        assert b"Swarm" in r.data
+        page = r.get_data(as_text=True)
+    # fields come from the macros in templates/config/macros.html
+    assert 'name="whale:docker_api_url"' in page
+    assert 'value="unix:///var/run/docker.sock"' in page
+    assert 'id="docker-use-swarm" name="whale:docker_use_swarm"' in page
+    assert 'id="docker-use-ssl"' in page and 'id="docker-ssl-config"' in page
+    assert 'id="router-type"' in page
+    assert 'name="whale:frp_direct_port_maximum"' in page  # frp router fields
+    assert 'name="whale:docker_dns_containers"' in page
+    assert "/admin/plugins/ctfd-whale" not in page and "onchange" not in page
 
 
 def test_admin_containers_page_view_modes(app):

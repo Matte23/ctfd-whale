@@ -2,3 +2,5 @@ __pycache__/
 *.py[cod]
 .DS_Store
 .venv/
+# written by CTFd's test app (make test)
+.ctfd_secret_key

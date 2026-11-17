@@ -14,15 +14,15 @@
         <a class="nav-link" data-toggle="pill" href="#challenges">Challenges</a>
     </li>
     <li class="nav-item">
-        <a class="nav-link" href="/plugins/ctfd-whale/admin/containers">🔗 Instances</a>
+        <a class="nav-link" href="{{ url_for('ctfd-whale.admin_list_containers') }}">🔗 Instances</a>
     </li>
 {% endblock %}
 
 {% block panel %}
     {% include "components/errors.html" %}
     <div role="tabpanel" class="tab-pane config-section active" id="settings">
-        <form method="POST" accept-charset="utf-8" action="/admin/plugins/ctfd-whale"
-              class="form-horizontal">
+        {# submitted by config.js through CTFd's config API #}
+        <form accept-charset="utf-8" class="form-horizontal">
             <div class="tab-content">
                 {% include "config/docker.config.html" %}
                 {% include "config/base.router.config.html" %}

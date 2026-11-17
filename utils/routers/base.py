@@ -22,11 +22,11 @@ class BaseRouter(abc.ABC):
         """
 
     @abc.abstractmethod
-    def register(self, container: WhaleContainer) -> typing.Tuple[bool, str]:
+    def register(self, container: WhaleContainer) -> tuple[bool, str]:
         """Route traffic to the container: (ok, message)."""
 
     @abc.abstractmethod
-    def unregister(self, container: WhaleContainer) -> typing.Tuple[bool, str]:
+    def unregister(self, container: WhaleContainer) -> tuple[bool, str]:
         """Stop routing to the container: (ok, message). Must be safe to repeat."""
 
     def sync(self):
@@ -35,5 +35,5 @@ class BaseRouter(abc.ABC):
         return None
 
     @abc.abstractmethod
-    def check_availability(self) -> typing.Tuple[bool, str]:
+    def check_availability(self) -> tuple[bool, str]:
         """Whether the router backend is reachable: (ok, message)."""

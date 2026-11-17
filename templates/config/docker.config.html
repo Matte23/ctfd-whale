@@ -1,129 +1,36 @@
+{% from "config/macros.html" import text_field, checkbox, submit_button with context %}
 <div class="tab-pane fade show active" id="docker" role="tabpanel" aria-autocomplete="none">
     <h5>Common</h5>
     <small class="form-text text-muted">
         Common configurations for both standalone and grouped containers
     </small><br>
-    {% for config, val in {
-        "API URL": ("docker_api_url", "Docker API to connect to"),
-        "Credentials": ("docker_credentials", "username:password for docker.io, or username:password:registry for another registry. useful for private images"),
-        "Swarm Nodes": ("docker_swarm_nodes", "Will pick up one from it, You should set your node with label name=windows-* or name=linux-*. Separated by commas."),
-    }.items() %}
-        {% set value = get_config('whale:' + val[0]) %}
-        <div class="form-group">
-            <label for="{{ val[0].replace('_', '-') }}">
-                {{ config }}
-                <small class="form-text text-muted">{{ val[1] }}</small>
-            </label>
-            <input type="text" class="form-control"
-                   id="{{ val[0].replace('_', '-') }}" name="{{ 'whale:' + val[0] }}"
-                   {% if value != None %}value="{{ value }}"{% endif %}>
-        </div>
-    {% endfor %}
-        {% set use_swarm = get_config('whale:docker_use_swarm') %}
-        <div class="form-check">
-            <input type="checkbox" id="docker-use-swarm" name="whale:docker_use_swarm"
-                   {% if use_swarm == True %}checked{% endif %}>
-            <label for="docker-use-swarm">Use Swarm</label>
-        </div>
-        {% set use_ssl = get_config('whale:docker_use_ssl') %}
-        <div class="form-check">
-            <input type="checkbox" id="docker-use-ssl" name="whale:docker_use_ssl"
-                   {% if use_ssl == True %}checked{% endif %}>
-            <label for="docker-use-ssl">Use SSL</label>
-        </div>
-        <div class="container" id="docker-ssl-config">
-            <div class="form-group">
-                <label for="docker-ssl-ca-cert">
-                    SSL CA Certificate
-                    <small class="form-text text-muted">
-                        the location of the CA certificate file used in ssl connection
-                    </small>
-                </label>
-                <input type="text" class="form-control"
-                       id="docker-ssl-ca-cert" name="whale:docker_ssl_ca_cert"
-                       value="{{ get_config('whale:docker_ssl_ca_cert') }}">
-            </div>
-            <div class="form-group">
-                <label for="docker-ssl-client-cert">
-                    SSL Client Certificate
-                    <small class="form-text text-muted">
-                        the location of the client certificate file used in ssl connection
-                    </small>
-                </label>
-                <input type="text" class="form-control"
-                       id="docker-ssl-client-cert" name="whale:docker_ssl_client_cert"
-                       value="{{ get_config('whale:docker_ssl_client_cert') }}">
-            </div>
-            <div class="form-group">
-                <label for="docker-ssl-client-key">
-                    SSL Client Key
-                    <small class="form-text text-muted">
-                        the location of the client key file used in ssl connection
-                    </small>
-                </label>
-                <input type="text" class="form-control"
-                       id="docker-ssl-client-key" name="whale:docker_ssl_client_key"
-                       value="{{ get_config('whale:docker_ssl_client_key') }}">
-            </div>
-        </div>
-        <script>
-            (function () {
-                let config = document.getElementById('docker-ssl-config');
-                let option = document.getElementById('docker-use-ssl');
-                config.hidden = !option.checked;
-                option.onclick = () => (config.hidden = !option.checked) || true;
-            }) ()
-        </script>
+    {{ text_field("docker_api_url", "API URL", "Docker API to connect to") }}
+    {{ text_field("docker_credentials", "Credentials", "username:password for docker.io, or username:password:registry for another registry. useful for private images") }}
+    {{ text_field("docker_swarm_nodes", "Swarm Nodes", "Will pick up one from it, You should set your node with label name=windows-* or name=linux-*. Separated by commas.") }}
+    {{ checkbox("docker_use_swarm", "Use Swarm") }}
+    {{ checkbox("docker_use_ssl", "Use SSL") }}
+    {# shown only while "Use SSL" is checked (config.js) #}
+    <div class="container" id="docker-ssl-config">
+        {{ text_field("docker_ssl_ca_cert", "SSL CA Certificate", "the location of the CA certificate file used in ssl connection") }}
+        {{ text_field("docker_ssl_client_cert", "SSL Client Certificate", "the location of the client certificate file used in ssl connection") }}
+        {{ text_field("docker_ssl_client_key", "SSL Client Key", "the location of the client key file used in ssl connection") }}
+    </div>
     <hr>
     <h5>Standalone Containers</h5>
     <small class="form-text text-muted">
         Typical challenges. Under most circumstances you only need to set these.
     </small><br>
-    {% for config, val in {
-        "Auto Connect Network": ("docker_auto_connect_network", "The network connected for single-containers. It's usually the same network as the frpc is in."),
-        "Dns Setting": ("docker_dns", "Decide which dns will be used in container network."),
-    }.items() %}
-        {% set value = get_config('whale:' + val[0]) %}
-        <div class="form-group">
-            <label for="{{ val[0].replace('_', '-') }}">
-                {{ config }}
-                <small class="form-text text-muted">
-                    {{ val[1] }}
-                </small>
-            </label>
-            <input type="text" class="form-control"
-                   id="{{ val[0].replace('_', '-') }}" name="{{ 'whale:' + val[0] }}"
-                   {% if value != None %}value="{{ value }}"{% endif %}>
-        </div>
-    {% endfor %}
+    {{ text_field("docker_auto_connect_network", "Auto Connect Network", "The network connected for single-containers. It's usually the same network as the frpc is in.") }}
+    {{ text_field("docker_dns", "Dns Setting", "Decide which dns will be used in container network.") }}
     <hr>
     <h5>Grouped Containers</h5>
     <small class="form-text text-muted">
         Designed for multi-container challenges
     </small><br>
-    {% for config, val in {
-        "Auto Connect Containers": ("docker_auto_connect_containers","Decide which container will be connected to multi-container-network automatically. Separated by commas."),
-        "DNS Containers": ("docker_dns_containers", "Which of the auto connect containers serve DNS to the challenge containers. Separated by commas. Empty: with Swarm, those whose name contains 'dns'; without Swarm, all of them."),
-        "Multi-Container Network Subnet": ("docker_subnet", "Subnet which will be used by auto created networks for multi-container challenges."),
-        "Multi-Container Network Subnet New Prefix": ("docker_subnet_new_prefix", "Prefix for auto created network.")
-    }.items() %}
-        {% set value = get_config('whale:' + val[0]) %}
-        <div class="form-group">
-            <label for="{{ val[0].replace('_', '-') }}">
-                {{ config }}
-                <small class="form-text text-muted">
-                    {{ val[1] }}
-                </small>
-            </label>
-            <input type="text" class="form-control"
-                   id="{{ val[0].replace('_', '-') }}" name="{{ 'whale:' + val[0] }}"
-                   {% if value != None %}value="{{ value }}"{% endif %}>
-        </div>
-    {% endfor %}
+    {{ text_field("docker_auto_connect_containers", "Auto Connect Containers", "Decide which container will be connected to multi-container-network automatically. Separated by commas.") }}
+    {{ text_field("docker_dns_containers", "DNS Containers", "Which of the auto connect containers serve DNS to the challenge containers. Separated by commas. Empty: with Swarm, those whose name contains 'dns'; without Swarm, all of them.") }}
+    {{ text_field("docker_subnet", "Multi-Container Network Subnet", "Subnet which will be used by auto created networks for multi-container challenges.") }}
+    {{ text_field("docker_subnet_new_prefix", "Multi-Container Network Subnet New Prefix", "Prefix for auto created network.") }}
 
-    <div class="submit-row float-right">
-        <button type="submit" tabindex="0" class="btn btn-md btn-primary btn-outlined">
-            Submit
-        </button>
-    </div>
+    {{ submit_button() }}
 </div>

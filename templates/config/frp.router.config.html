@@ -1,23 +1,10 @@
-{% for config, val in {
-    "API URL": ("frp_api_url", "Frp API to connect to"),
-    "Http Domain Suffix": ("frp_http_domain_suffix", "Will be appended to the hash of a container"),
-    "External Http Port": ("frp_http_port", "Keep in sync with frps:vhost_http_port"),
-    "Direct IP Address":("frp_direct_ip_address","For direct redirect"),
-    "Direct Minimum Port": ("frp_direct_port_minimum", "For direct redirect (pwn challenges)"),
-    "Direct Maximum Port": ("frp_direct_port_maximum", "For direct redirect (pwn challenges)"),
-}.items() %}
-    {% set value = get_config('whale:' + val[0]) %}
-    <div class="form-group">
-        <label for="{{ val[0].replace('_', '-') }}">
-            {{ config }}
-            <small class="form-text text-muted">
-                {{ val[1] }}
-            </small>
-        </label>
-        <input type="text" class="form-control" id="{{ val[0].replace('_', '-') }}" name="{{ 'whale:' + val[0] }}" {% if
-        value !=None %}value="{{ value }}" {% endif %}>
-    </div>
-{% endfor %}
+{% from "config/macros.html" import text_field with context %}
+{{ text_field("frp_api_url", "API URL", "Frp API to connect to") }}
+{{ text_field("frp_http_domain_suffix", "Http Domain Suffix", "Will be appended to the hash of a container") }}
+{{ text_field("frp_http_port", "External Http Port", "Keep in sync with frps:vhost_http_port") }}
+{{ text_field("frp_direct_ip_address", "Direct IP Address", "For direct redirect") }}
+{{ text_field("frp_direct_port_minimum", "Direct Minimum Port", "For direct redirect (pwn challenges)") }}
+{{ text_field("frp_direct_port_maximum", "Direct Maximum Port", "For direct redirect (pwn challenges)") }}
 {% set frpc_template = get_config("whale:frp_config_template", "") %}
 <div class="form-group">
     <label for="frp-config-template">
@@ -44,7 +31,7 @@
                 {%- if 'server_port' in i -%}{{ i.replace('server_port', 'bind_port') }}{%- endif -%}
             {% endfor %}
             vhost_http_port = {{ get_config('whale:frp_http_port') }}
-subdomain_host = {{ get_config('whale:frp_http_domain_suffix', '127.0.0.1.xip.io').lstrip('.') }}
+subdomain_host = {{ get_config('whale:frp_http_domain_suffix', '127.0.0.1.nip.io').lstrip('.') }}
     </textarea>
     </div>
 {% endif %}

@@ -6,32 +6,6 @@ from CTFd.models import Challenges, db
 from .utils.templates import render_http_subdomain
 
 
-class WhaleConfig(db.Model):
-    key = db.Column(db.String(length=128), primary_key=True)
-    value = db.Column(db.Text)
-
-    def __init__(self, key, value):
-        self.key = key
-        self.value = value
-
-    def __repr__(self):
-        return "<WhaleConfig {0} {1}>".format(self.key, self.value)
-
-
-class WhaleRedirectTemplate(db.Model):
-    key = db.Column(db.String(20), primary_key=True)
-    frp_template = db.Column(db.Text)
-    access_template = db.Column(db.Text)
-
-    def __init__(self, key, access_template, frp_template):
-        self.key = key
-        self.access_template = access_template
-        self.frp_template = frp_template
-
-    def __repr__(self):
-        return "<WhaleRedirectTemplate {0}>".format(self.key)
-
-
 class DockerChallenges(Challenges):
     __mapper_args__ = {"polymorphic_identity": "docker"}
     id = db.Column(
@@ -46,9 +20,9 @@ class DockerChallenges(Challenges):
     init = db.Column(db.Boolean, default=False)
     privileged = db.Column(db.Boolean, default=False)
 
-    docker_image = db.Column(db.Text, default=0)
-    redirect_type = db.Column(db.Text, default=0)
-    redirect_port = db.Column(db.Integer, default=0)
+    docker_image = db.Column(db.Text)
+    redirect_type = db.Column(db.Text)
+    redirect_port = db.Column(db.Integer)
 
 
 class WhaleContainer(db.Model):
@@ -66,6 +40,7 @@ class WhaleContainer(db.Model):
     challenge_id = db.Column(
         db.Integer, db.ForeignKey("challenges.id", ondelete="SET NULL"), nullable=True
     )
+    # UTC, like CTFd's own timestamps
     start_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     renew_count = db.Column(db.Integer, nullable=False, default=0)
     status = db.Column(db.Integer, default=STATUS_RUNNING)
@@ -106,7 +81,7 @@ class WhaleContainer(db.Model):
     def __init__(self, user_id, challenge_id, flag_id):
         self.user_id = user_id
         self.challenge_id = challenge_id
-        self.start_time = datetime.now()
+        self.start_time = datetime.utcnow()
         self.renew_count = 0
         self.uuid = str(uuid.uuid4())
         self.name = f"{user_id}-{self.uuid}"

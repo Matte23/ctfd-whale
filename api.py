@@ -53,7 +53,7 @@ def serialize_container(container):
         "flag": container.flag.content if container.flag else None,
         "port": container.port,
         "subnet": container.subnet,
-        "start_time": container.start_time.isoformat(),
+        "start_time": container.start_time.isoformat() + "Z",
         "renew_count": container.renew_count,
         "removing": container.is_removing,
     }
@@ -135,7 +135,7 @@ class UserContainers(Resource):
                 "lan_domain": container.name,
                 "user_access": get_router().access(container),
                 "remaining_time": timeout
-                - int((datetime.now() - container.start_time).total_seconds()),
+                - int((datetime.utcnow() - container.start_time).total_seconds()),
             },
         }
 

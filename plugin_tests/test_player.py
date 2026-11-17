@@ -1,5 +1,6 @@
 """Player endpoints: launch, info, renew, destroy, and their limits."""
 
+import datetime
 import time
 
 from conftest import (
@@ -43,6 +44,16 @@ def test_launch_info_renew_destroy(app, fake_docker):
         assert r.get_json()["message"] == "Container destroyed"
     assert fake_docker.running == set()
     assert _containers(app) == []
+
+
+def test_start_time_is_utc(app):
+    """P3-16: stored like CTFd's own timestamps (its isoformat filter adds "Z")."""
+    challenge_id = create_docker_challenge(app)
+    with player(app) as client:
+        assert client.post(container_url(challenge_id), json={}).status_code == 200
+    [container] = _containers(app)
+    drift = abs(container.start_time - datetime.datetime.utcnow())
+    assert drift < datetime.timedelta(seconds=60)
 
 
 def test_other_challenge_shows_no_instance(app):

@@ -1,24 +1,38 @@
 const $ = CTFd.lib.$;
 
-$(".config-section > form:not(.form-upload)").submit(async function (event) {
-    event.preventDefault();
-    const obj = $(this).serializeJSON();
-    const params = {};
-    for (let x in obj) {
-        if (obj[x] === "true") {
-            params[x] = true;
-        } else if (obj[x] === "false") {
-            params[x] = false;
-        } else {
-            params[x] = obj[x];
-        }
+async function saveSettings(params) {
+    const response = await CTFd.api.patch_config_list({}, params);
+    if (response && response.success) {
+        location.reload();
+        return;
     }
-    await CTFd.api.patch_config_list({}, params);
-    location.reload();
-});
-$(".config-section > form:not(.form-upload) > div > div > div > #router-type").change(async function () {
-    await CTFd.api.patch_config_list({}, {
-        'whale:router_type': $(this).val(),
+    CTFd.ui.ezq.ezAlert({
+        title: "Error",
+        body: "The settings could not be saved.",
+        button: "OK",
     });
-    location.reload();
+}
+
+$(".config-section > form").submit(function (event) {
+    event.preventDefault();
+    // CTFd's serializeJSON sends checkboxes as true/false
+    saveSettings($(this).serializeJSON());
 });
+
+$("#router-type").change(function () {
+    saveSettings({ "whale:router_type": $(this).val() });
+});
+
+// the SSL fields only matter while "Use SSL" is checked
+(function () {
+    const option = document.getElementById("docker-use-ssl");
+    const fields = document.getElementById("docker-ssl-config");
+    if (!option || !fields) {
+        return;
+    }
+    const sync = function () {
+        fields.hidden = !option.checked;
+    };
+    sync();
+    option.addEventListener("change", sync);
+})();

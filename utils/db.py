@@ -6,7 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
-from ..models import WhaleContainer, WhaleRedirectTemplate
+from ..models import WhaleContainer
 from .config import whale_config
 
 # Retries when another worker takes the same port/subnet at the same time.
@@ -16,7 +16,7 @@ ALLOCATION_ATTEMPTS = 10
 def _expiry_cutoff():
     """Containers started before this are expired."""
     timeout = int(whale_config("docker_timeout"))
-    return datetime.datetime.now() - datetime.timedelta(seconds=timeout)
+    return datetime.datetime.utcnow() - datetime.timedelta(seconds=timeout)
 
 
 class DBContainer:
@@ -70,12 +70,6 @@ class DBContainer:
         return WhaleContainer.query.filter_by(id=container_id).first()
 
     @staticmethod
-    def get_container_by_port(port: int):
-        q = db.session.query(WhaleContainer)
-        q = q.filter(WhaleContainer.port == port)
-        return q.first()
-
-    @staticmethod
     def remove_container_record(container: WhaleContainer):
         # delete by id, not by user: removing one record must never drop
         # another container's record and orphan its docker resources
@@ -102,19 +96,9 @@ class DBContainer:
         return q.filter(WhaleContainer.start_time >= _expiry_cutoff())
 
     @staticmethod
-    def get_all_alive_container():
-        """Unexpired containers, including those being removed."""
-        return DBContainer._alive_query().all()
-
-    @staticmethod
     def get_all_running_container():
         """Unexpired containers that are not being removed: the routed ones."""
         return DBContainer._alive_query().filter(DBContainer._running()).all()
-
-    @staticmethod
-    def get_all_container():
-        q = db.session.query(WhaleContainer)
-        return q.all()
 
     @staticmethod
     def get_alive_containers_page(page: int, per_page: int):
@@ -171,21 +155,3 @@ class DBContainer:
     @staticmethod
     def allocate_subnet(container: WhaleContainer, candidates):
         return DBContainer._allocate(container, "subnet", candidates)
-
-
-class DBRedirectTemplate:
-    @staticmethod
-    def get_all_templates():
-        return WhaleRedirectTemplate.query.all()
-
-    @staticmethod
-    def create_template(name, access_template, frp_template):
-        if WhaleRedirectTemplate.query.filter_by(key=name).first():
-            return  # already existed
-        db.session.add(WhaleRedirectTemplate(name, access_template, frp_template))
-        db.session.commit()
-
-    @staticmethod
-    def delete_template(name):
-        WhaleRedirectTemplate.query.filter_by(key=name).delete()
-        db.session.commit()

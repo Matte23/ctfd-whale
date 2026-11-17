@@ -1,0 +1,31 @@
+{# Form fields of the settings page; every field is the setting "whale:<key>". #}
+
+{% macro text_field(key, label, help) %}
+    {% set value = get_config('whale:' + key) %}
+    <div class="form-group">
+        <label for="{{ key | replace('_', '-') }}">
+            {{ label }}
+            <small class="form-text text-muted">{{ help }}</small>
+        </label>
+        <input type="text" class="form-control"
+               id="{{ key | replace('_', '-') }}" name="whale:{{ key }}"
+               {% if value is not none %}value="{{ value }}"{% endif %}>
+    </div>
+{% endmacro %}
+
+{% macro checkbox(key, label) %}
+    <div class="form-check">
+        <input type="checkbox" class="form-check-input"
+               id="{{ key | replace('_', '-') }}" name="whale:{{ key }}"
+               {% if get_config('whale:' + key) == True %}checked{% endif %}>
+        <label class="form-check-label" for="{{ key | replace('_', '-') }}">{{ label }}</label>
+    </div>
+{% endmacro %}
+
+{% macro submit_button() %}
+    <div class="submit-row float-right">
+        <button type="submit" tabindex="0" class="btn btn-md btn-primary btn-outlined">
+            Submit
+        </button>
+    </div>
+{% endmacro %}

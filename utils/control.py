@@ -117,17 +117,12 @@ class ControlUtil:
     def renew_container(container: WhaleContainer):
         if container.is_removing:
             return False, "This instance is being destroyed"
-        timeout = int(whale_config("docker_timeout"))
-        container.start_time = container.start_time + datetime.timedelta(
-            seconds=timeout
-        )
-        if container.start_time > datetime.datetime.now():
-            container.start_time = datetime.datetime.now()
-            # race condition? useless maybe?
-            # useful when docker_timeout < poll timeout (10 seconds)
-            # doesn't make any sense
-        else:
+        # renewing restarts the timeout from now, unless already expired
+        now = datetime.datetime.utcnow()
+        timeout = datetime.timedelta(seconds=int(whale_config("docker_timeout")))
+        if container.start_time + timeout <= now:
             return False, "Invalid container"
+        container.start_time = now
         container.renew_count += 1
         db.session.commit()
         return True, "Container Renewed"

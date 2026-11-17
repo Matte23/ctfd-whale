@@ -43,7 +43,7 @@
                     </h6>
                     <p class="card-text">{{ container.user_access }}</p>
                     <p class="card-text">{{ container.flag.content if container.flag else "" }}</p>
-                    Time Started: {{ container.start_time }}
+                    Time Started: <span data-time="{{ container.start_time | isoformat }}"></span>
                     {% if container.is_removing %}
                         <span class="badge badge-warning" title="Removal failed once, auto-clean is retrying it">removing</span>
                     {% endif %}
