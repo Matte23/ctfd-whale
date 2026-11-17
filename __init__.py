@@ -23,7 +23,13 @@ from .utils.routers import Router
 from .utils.setup import setup_default_configs
 
 
+# Keep a reference to the lock file for the life of the process: if it is
+# garbage-collected, the file is closed and the fcntl lock is released.
+_scheduler_lock_file = None
+
+
 def load(app):
+    global _scheduler_lock_file
     app.config["RESTX_ERROR_404_HELP"] = False
     # upgrade()
     plugin_name = __name__.split(".")[-1]
@@ -98,8 +104,12 @@ def load(app):
 
     try:
         lock_file = open("/tmp/ctfd_whale.lock", "w")
-        lock_fd = lock_file.fileno()
-        fcntl.lockf(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            fcntl.lockf(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except IOError:
+            lock_file.close()
+            raise
+        _scheduler_lock_file = lock_file
 
         scheduler = APScheduler()
         scheduler.init_app(app)

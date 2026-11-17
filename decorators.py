@@ -4,7 +4,7 @@ from flask import request, current_app, session
 from flask_restx import abort
 from sqlalchemy.sql import and_
 
-from CTFd.models import Challenges
+from CTFd.models import Challenges, Solves
 from CTFd.utils.user import is_admin, get_current_user
 from .utils.cache import CacheProvider
 
@@ -14,19 +14,45 @@ def challenge_visible(func):
     def _challenge_visible(*args, **kwargs):
         challenge_id = request.args.get('challenge_id')
         if is_admin():
-            if not Challenges.query.filter(
-                Challenges.id == challenge_id
-            ).first():
+            challenge = Challenges.query.filter(
+                Challenges.id == challenge_id,
+                Challenges.type == "docker",
+            ).first()
+            if not challenge:
                 abort(404, 'no such challenge', success=False)
         else:
-            if not Challenges.query.filter(
+            challenge = Challenges.query.filter(
                 Challenges.id == challenge_id,
+                Challenges.type == "docker",
                 and_(Challenges.state != "hidden", Challenges.state != "locked"),
-            ).first():
+            ).first()
+            if not challenge:
                 abort(403, 'challenge not visible', success=False)
+            if not _prerequisites_met(challenge):
+                abort(403, 'challenge not unlocked', success=False)
         return func(*args, **kwargs)
 
     return _challenge_visible
+
+
+def _prerequisites_met(challenge):
+    # mirrors the prerequisite check in CTFd/api/v1/challenges.py
+    if not challenge.requirements:
+        return True
+    requirements = challenge.requirements.get("prerequisites", [])
+    if not requirements:
+        return True
+    all_challenge_ids = {
+        c.id for c in Challenges.query.with_entities(Challenges.id).all()
+    }
+    prereqs = set(requirements).intersection(all_challenge_ids)
+    solve_ids = {
+        value
+        for value, in Solves.query.with_entities(Solves.challenge_id)
+        .filter_by(account_id=get_current_user().account_id)
+        .all()
+    }
+    return solve_ids >= prereqs
 
 
 def frequency_limited(func):
