@@ -27,8 +27,8 @@ class CacheProvider:
             if container.port != 0:
                 used_port_list.append(container.port)
         for port in range(
-            int(get_config("whale:frp_direct_port_minimum", 29000)),
-            int(get_config("whale:frp_direct_port_maximum", 28000)) + 1,
+            int(get_config("whale:frp_direct_port_minimum", 10000)),
+            int(get_config("whale:frp_direct_port_maximum", 10100)) + 1,
         ):
             if port not in used_port_list:
                 self.add_available_port(port)

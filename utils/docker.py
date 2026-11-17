@@ -47,8 +47,14 @@ def docker_login(client):
 
 
 class DockerUtils:
+    client = None
+    # whale:refresh is set to a new token on every settings save (assets/config.js);
+    # each worker compares it with the token its client was built with.
+    _refresh = None
+
     @staticmethod
     def init():
+        refresh = get_config("whale:refresh")
         try:
             DockerUtils.client = get_docker_client()
         except Exception:
@@ -57,10 +63,22 @@ class DockerUtils:
                 + "Please ensure the docker api url (first config item) is correct\n"
                 + "if you are using unix:///var/run/docker.sock, check if the socket is correctly mapped"
             )
+        # only mark as up to date once the new client exists; a failed login
+        # below keeps the (anonymous) client, as before
+        DockerUtils._refresh = refresh
         try:
             docker_login(DockerUtils.client)
         except Exception:
             raise WhaleError("Docker registry login failed, check your credentials")
+
+    @staticmethod
+    def get_client():
+        if (
+            DockerUtils.client is None
+            or DockerUtils._refresh != get_config("whale:refresh")
+        ):
+            DockerUtils.init()
+        return DockerUtils.client
 
     @staticmethod
     def add_container(container: WhaleContainer):
@@ -69,20 +87,20 @@ class DockerUtils:
         if container.challenge.docker_image.startswith("{"):
             if use_swarm:
                 DockerUtils._create_grouped_container_swarm(
-                    DockerUtils.client, container
+                    DockerUtils.get_client(), container
                 )
             else:
                 DockerUtils._create_grouped_container_classic(
-                    DockerUtils.client, container
+                    DockerUtils.get_client(), container
                 )
         else:
             if use_swarm:
                 DockerUtils._create_standalone_container_swarm(
-                    DockerUtils.client, container
+                    DockerUtils.get_client(), container
                 )
             else:
                 DockerUtils._create_standalone_container_classic(
-                    DockerUtils.client, container
+                    DockerUtils.get_client(), container
                 )
 
     @staticmethod
@@ -261,12 +279,12 @@ class DockerUtils:
         use_swarm = get_config("whale:docker_use_swarm", False)
 
         if use_swarm:
-            for s in DockerUtils.client.services.list(
+            for s in DockerUtils.get_client().services.list(
                 filters={"label": f"whale_id={whale_id}"}
             ):
                 s.remove()
         else:
-            for c in DockerUtils.client.containers.list(
+            for c in DockerUtils.get_client().containers.list(
                 all=True, filters={"label": f"whale_id={whale_id}"}
             ):
                 try:
@@ -274,7 +292,7 @@ class DockerUtils:
                 except Exception:
                     pass
 
-        networks = DockerUtils.client.networks.list(names=[whale_id])
+        networks = DockerUtils.get_client().networks.list(names=[whale_id])
         if len(networks) > 0:
             auto_containers = get_config(
                 "whale:docker_auto_connect_containers", ""

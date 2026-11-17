@@ -1,4 +1,4 @@
-import random
+import secrets
 import string
 import uuid
 
@@ -8,11 +8,16 @@ from jinja2 import Template
 from ..models import DockerChallenges
 
 
+# Flags must not be predictable: use the OS CSPRNG. SystemRandom has the same
+# API as the random module, so existing templates using random.* keep working.
+_random = secrets.SystemRandom()
+
+
 def random_string(length: int = 16):
-    return "".join(random.choices(string.ascii_letters + string.digits, k=length))
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
-@staticmethod
 def generate_flag(challenge_id: int):
     challenge = DockerChallenges.query.filter_by(id=challenge_id).first()
     flag_template = ""
@@ -25,5 +30,5 @@ def generate_flag(challenge_id: int):
         )
 
     return Template(flag_template).render(
-        uuid=uuid, random=random, get_config=get_config, random_string=random_string
+        uuid=uuid, random=_random, get_config=get_config, random_string=random_string
     )
