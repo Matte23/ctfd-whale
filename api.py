@@ -56,11 +56,23 @@ class AdminContainers(Resource):
             },
         }
 
+    # Admin actions address containers by id, not by user: the row of a
+    # deleted user has no user_id anymore.
+    @staticmethod
+    def _get_container_or_abort():
+        container_id = request.args.get("container_id", type=int)
+        if container_id is None:
+            abort(400, "Missing or invalid container_id", success=False)
+        container = DBContainer.get_container_by_id(container_id)
+        if container is None:
+            abort(404, "No such container", success=False)
+        return container
+
     @staticmethod
     @admins_only
     def patch():
-        user_id = request.args.get("user_id", -1)
-        result, message = ControlUtil.try_renew_container(user_id=int(user_id))
+        container = AdminContainers._get_container_or_abort()
+        result, message = ControlUtil.renew_container(container)
         if not result:
             abort(403, message, success=False)
         return {"success": True, "message": message}
@@ -68,8 +80,8 @@ class AdminContainers(Resource):
     @staticmethod
     @admins_only
     def delete():
-        user_id = request.args.get("user_id")
-        result, message = ControlUtil.try_remove_container(user_id)
+        container = AdminContainers._get_container_or_abort()
+        result, message = ControlUtil.remove_container(container)
         return {"success": result, "message": message}
 
 
@@ -86,16 +98,15 @@ class UserContainers(Resource):
         if not container:
             return {"success": True, "data": {}}
         timeout = int(get_config("whale:docker_timeout", "3600"))
-        c = (
-            container.challenge
-        )  # build a url for quick jump. todo: escape dash in categories and names.
-        # link = f'<a target="_blank" href="/challenges#{c.category}-{c.name}-{c.id}">{c.name}</a>'
-        if int(container.challenge_id) != int(challenge_id):
+        # challenge_id is NULL when the challenge was deleted meanwhile
+        if container.challenge_id is None or container.challenge_id != int(
+            challenge_id
+        ):
             return {"success": True, "data": {}}
         return {
             "success": True,
             "data": {
-                "lan_domain": str(user_id) + "-" + container.uuid,
+                "lan_domain": container.name,
                 "user_access": Router.access(container),
                 "remaining_time": timeout
                 - int((datetime.now() - container.start_time).total_seconds()),
@@ -149,10 +160,11 @@ class UserContainers(Resource):
         container = DBContainer.get_current_containers(user_id)
         if container is None:
             abort(403, "Instance not found.", success=False)
-        if int(container.challenge_id) != int(challenge_id):
+        if container.challenge is None or container.challenge_id != int(challenge_id):
+            other = container.challenge.name if container.challenge else "deleted"
             abort(
                 403,
-                f"Container started but not from this challenge（{container.challenge.name}）",
+                f"Container started but not from this challenge ({other})",
                 success=False,
             )
         if container.renew_count >= docker_max_renew_count:

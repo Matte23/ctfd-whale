@@ -50,6 +50,10 @@ class ControlUtil:
         container = DBContainer.get_current_containers(user_id=user_id)
         if not container:
             return False, "No such container"
+        return ControlUtil.remove_container(container)
+
+    @staticmethod
+    def remove_container(container):
         for _ in range(3):  # configurable? as "onerror_retry_cnt"
             try:
                 ok, msg = Router.unregister(container)
@@ -69,6 +73,10 @@ class ControlUtil:
         container = DBContainer.get_current_containers(user_id)
         if not container:
             return False, "No such container"
+        return ControlUtil.renew_container(container)
+
+    @staticmethod
+    def renew_container(container):
         timeout = int(get_config("whale:docker_timeout", "3600"))
         container.start_time = container.start_time + datetime.timedelta(
             seconds=timeout

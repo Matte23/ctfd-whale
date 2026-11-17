@@ -23,32 +23,44 @@
                 <tr>
                     <td class="border-right" data-checkbox>
                         <div class="form-check text-center">&nbsp;
-                            <input type="checkbox" class="form-check-input" data-user-id="{{ container.user.id }}">
+                            <input type="checkbox" class="form-check-input" data-container-id="{{ container.id }}">
                         </div>
                     </td>
                     <td class="text-center">
                         {{ container.id }}
                     </td>
                     <td class="text-center">
-                        <a href="{{ url_for('admin.users_detail', user_id=container.user.id) }}">
-                            {{ container.user.name | truncate(12) }}
-                        </a>
+                        {% if container.user %}
+                            <a href="{{ url_for('admin.users_detail', user_id=container.user.id) }}">
+                                {{ container.user.name | truncate(12) }}
+                            </a>
+                        {% else %}
+                            <span class="text-muted">deleted</span>
+                        {% endif %}
                     </td>
                     <td class="text-center">
-                        <a href="{{ url_for('admin.challenges_detail', challenge_id=container.challenge.id) }}">
-                            {{ container.challenge.name }}
-                        </a>
+                        {% if container.challenge %}
+                            <a href="{{ url_for('admin.challenges_detail', challenge_id=container.challenge.id) }}">
+                                {{ container.challenge.name }}
+                            </a>
+                        {% else %}
+                            <span class="text-muted">deleted</span>
+                        {% endif %}
                     </td>
                     <td class="text-center">
-                        {{ container.challenge.redirect_type }}&nbsp;
-                        <button class="btn btn-link p-0 click-copy" data-copy="{{ container.user_access }}">
-                            <i class="fas fa-clipboard"></i>
-                        </button>
+                        {% if container.challenge %}
+                            {{ container.challenge.redirect_type }}&nbsp;
+                            <button class="btn btn-link p-0 click-copy" data-copy="{{ container.user_access }}">
+                                <i class="fas fa-clipboard"></i>
+                            </button>
+                        {% endif %}
                     </td>
                     <td class="text-center">
-                        <button class="btn btn-link p-0 click-copy" data-copy="{{ container.flag.content }}">
-                            <i class="fas fa-clipboard"></i>
-                        </button>
+                        {% if container.flag %}
+                            <button class="btn btn-link p-0 click-copy" data-copy="{{ container.flag.content }}">
+                                <i class="fas fa-clipboard"></i>
+                            </button>
+                        {% endif %}
                     </td>
                     <td class="text-center">
                         <span data-time="{{ container.start_time | isoformat }}"></span>
@@ -56,16 +68,14 @@
                     <td class="text-center">
                         {{ container.renew_count }}&nbsp;
                         <button class="btn btn-link p-0 renew-container"
-                           container-id="{{ container.id }}" data-toggle="tooltip"
-                           user-id="{{ container.user.id }}" data-placement="top"
+                           container-id="{{ container.id }}" data-toggle="tooltip" data-placement="top"
                            title="Renew Container #{{ container.id }}">
                             <i class="fas fa-sync"></i>
                         </button>
                     </td>
                     <td class="text-center">
                         <button class="btn btn-link p-0 delete-container"
-                           container-id="{{ container.id }}" data-toggle="tooltip"
-                           user-id="{{ container.user.id }}" data-placement="top"
+                           container-id="{{ container.id }}" data-toggle="tooltip" data-placement="top"
                            title="Destroy Container #{{ container.id }}">
                             <i class="fas fa-times"></i>
                     </button>

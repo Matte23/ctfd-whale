@@ -24,6 +24,10 @@ class DBContainer:
         return q.first()
 
     @staticmethod
+    def get_container_by_id(container_id: int):
+        return WhaleContainer.query.filter_by(id=container_id).first()
+
+    @staticmethod
     def get_container_by_port(port: int):
         q = db.session.query(WhaleContainer)
         q = q.filter(WhaleContainer.port == port)

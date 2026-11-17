@@ -113,7 +113,7 @@ class DockerUtils:
 
         client.services.create(
             image=container.challenge.docker_image,
-            name=f"{container.user_id}-{container.uuid}",
+            name=container.name,
             env={"FLAG": container.flag.content},
             dns_config=docker.types.DNSConfig(nameservers=dns) if dns else None,
             networks=[
@@ -126,7 +126,7 @@ class DockerUtils:
                 cpu_limit=int(container.challenge.cpu_limit * 1e9),
             ),
             init=container.challenge.init,
-            labels={"whale_id": f"{container.user_id}-{container.uuid}"},
+            labels={"whale_id": container.name},
             constraints=["node.labels.name==" + node],
             endpoint_spec=docker.types.EndpointSpec(mode="dnsrr", ports={}),
         )
@@ -142,7 +142,7 @@ class DockerUtils:
                 "Challenge Image Parse Error\nplease check the challenge image string"
             )
 
-        network_name = f"{container.user_id}-{container.uuid}"
+        network_name = container.name
         network = DockerUtils._create_network(
             client, network_name, driver="overlay", scope="swarm"
         )
@@ -168,7 +168,7 @@ class DockerUtils:
             if has_processed_main:
                 container_name = f"{container.user_id}-{uuid.uuid4()}"
             else:
-                container_name = f"{container.user_id}-{container.uuid}"
+                container_name = container.name
                 node = DockerUtils.choose_node(
                     image, get_config("whale:docker_swarm_nodes", "").split(",")
                 )
@@ -189,7 +189,7 @@ class DockerUtils:
                     cpu_limit=int(container.challenge.cpu_limit * 1e9),
                 ),
                 init=container.challenge.init,
-                labels={"whale_id": f"{container.user_id}-{container.uuid}"},
+                labels={"whale_id": container.name},
                 hostname=name,
                 constraints=["node.labels.name==" + node],
                 endpoint_spec=docker.types.EndpointSpec(mode="dnsrr", ports={}),
@@ -202,7 +202,7 @@ class DockerUtils:
 
         client.containers.run(
             image=container.challenge.docker_image,
-            name=f"{container.user_id}-{container.uuid}",
+            name=container.name,
             environment={"FLAG": container.flag.content},
             detach=True,
             network=network_name,
@@ -213,7 +213,7 @@ class DockerUtils:
             init=container.challenge.init,
             privileged=container.challenge.privileged,
             nano_cpus=int(container.challenge.cpu_limit * 1e9),
-            labels={"whale_id": f"{container.user_id}-{container.uuid}"},
+            labels={"whale_id": container.name},
         )
 
     @staticmethod
@@ -227,7 +227,7 @@ class DockerUtils:
                 "Challenge Image Parse Error\nplease check the challenge image string"
             )
 
-        network_name = f"{container.user_id}-{container.uuid}"
+        network_name = container.name
         network = DockerUtils._create_network(client, network_name, driver="bridge")
 
         dns = []
@@ -253,7 +253,7 @@ class DockerUtils:
             if has_processed_main:
                 cname = f"{container.user_id}-{uuid.uuid4()}"
             else:
-                cname = f"{container.user_id}-{container.uuid}"
+                cname = container.name
                 has_processed_main = True
 
             client.containers.run(
@@ -270,12 +270,12 @@ class DockerUtils:
                 nano_cpus=int(container.challenge.cpu_limit * 1e9),
                 init=container.challenge.init,
                 privileged=container.challenge.privileged,
-                labels={"whale_id": f"{container.user_id}-{container.uuid}"},
+                labels={"whale_id": container.name},
             )
 
     @staticmethod
     def remove_container(container: WhaleContainer):
-        whale_id = f"{container.user_id}-{container.uuid}"
+        whale_id = container.name
         use_swarm = get_config("whale:docker_use_swarm", False)
 
         if use_swarm:

@@ -7,6 +7,7 @@ from CTFd.plugins import (
     register_plugin_assets_directory,
 )
 from CTFd.plugins.challenges import CHALLENGE_CLASSES
+from CTFd.plugins.migrations import upgrade
 from CTFd.utils import get_config, set_config
 from CTFd.utils.decorators import admins_only
 from flask import Blueprint, render_template, request, session
@@ -34,10 +35,12 @@ VIEW_MODES = ("list", "card")
 def load(app):
     global _scheduler_lock_file
     app.config["RESTX_ERROR_404_HELP"] = False
-    # upgrade()
     plugin_name = __name__.split(".")[-1]
     set_config("whale:plugin_name", plugin_name)
+    # create_all() creates missing tables; the migrations bring existing
+    # tables up to date (CTFd skips them on SQLite and only runs create_all)
     app.db.create_all()
+    upgrade(plugin_name=plugin_name)
     if not get_config("whale:setup"):
         setup_default_configs()
 
@@ -90,9 +93,9 @@ def load(app):
 
     def auto_clean_container():
         with app.app_context():
-            results = DBContainer.get_all_expired_container()
-            for r in results:
-                ControlUtil.try_remove_container(r.user_id)
+            # per container, not per user: rows of deleted users have no user_id
+            for container in DBContainer.get_all_expired_container():
+                ControlUtil.remove_container(container)
 
     app.register_blueprint(page_blueprint)
 

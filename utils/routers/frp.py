@@ -44,12 +44,13 @@ class FrpRouter(BaseRouter):
     def reload(self, exclude=None):
         rules = []
         for container in DBContainer.get_all_alive_container():
-            if container.uuid == exclude:
+            # no challenge: it was deleted, the container is waiting for cleanup
+            if container.uuid == exclude or container.challenge is None:
                 continue
             name = f'{container.challenge.redirect_type}_{container.user_id}_{container.uuid}'
             config = {
                 'type': self.types[container.challenge.redirect_type],
-                'local_ip': f'{container.user_id}-{container.uuid}',
+                'local_ip': container.name,
                 'local_port': container.challenge.redirect_port,
                 'use_compression': 'true',
             }
@@ -116,7 +117,9 @@ class FrpRouter(BaseRouter):
         return True, 'success'
 
     def release(self, container: WhaleContainer):
-        if container.challenge.redirect_type == 'direct' and container.port:
+        # only "direct" containers get a port; don't rely on container.challenge,
+        # which is None once the challenge has been deleted
+        if container.port:
             CacheProvider(app=current_app).add_available_port(container.port)
 
     def check_availability(self):

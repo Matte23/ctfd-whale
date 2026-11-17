@@ -57,14 +57,25 @@ class DockerChallenges(Challenges):
 
 class WhaleContainer(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    user_id = db.Column(None, db.ForeignKey("users.id"))
-    challenge_id = db.Column(None, db.ForeignKey("challenges.id"))
+    # SET NULL, not CASCADE: deleting a user, challenge or flag must keep the
+    # row, otherwise auto-clean can't find the docker resources to remove
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    challenge_id = db.Column(
+        db.Integer, db.ForeignKey("challenges.id", ondelete="SET NULL"), nullable=True
+    )
     start_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     renew_count = db.Column(db.Integer, nullable=False, default=0)
     status = db.Column(db.Integer, default=1)
     uuid = db.Column(db.String(256))
+    # docker name and whale_id label of the resources: "<user_id>-<uuid>".
+    # Stored so the resources can still be found once user_id is NULL.
+    name = db.Column(db.String(256))
     port = db.Column(db.Integer, nullable=True, default=0)
-    flag_id = db.Column(db.Integer, db.ForeignKey("flags.id"))
+    flag_id = db.Column(
+        db.Integer, db.ForeignKey("flags.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Relationships
     user = db.relationship(
@@ -91,10 +102,13 @@ class WhaleContainer(db.Model):
         self.start_time = datetime.now()
         self.renew_count = 0
         self.uuid = str(uuid.uuid4())
+        self.name = f"{user_id}-{self.uuid}"
         self.flag_id = flag_id
 
     @property
     def user_access(self):
+        if self.challenge is None:
+            return ""
         return Template(
             WhaleRedirectTemplate.query.filter_by(key=self.challenge.redirect_type)
             .first()
@@ -103,6 +117,8 @@ class WhaleContainer(db.Model):
 
     @property
     def frp_config(self):
+        if self.challenge is None:
+            return ""
         return Template(
             WhaleRedirectTemplate.query.filter_by(key=self.challenge.redirect_type)
             .first()

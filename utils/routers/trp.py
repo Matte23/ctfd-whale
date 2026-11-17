@@ -15,7 +15,8 @@ class TrpRouter(BaseRouter):
         self.url = get_config('whale:trp_api_url', '').rstrip("/")
         self.common = ''
         for container in DBContainer.get_all_alive_container():
-            self.register(container)
+            if container.challenge is not None:
+                self.register(container)
 
     @staticmethod
     def get_domain(container: WhaleContainer):
@@ -37,7 +38,7 @@ class TrpRouter(BaseRouter):
     def register(self, container: WhaleContainer):
         try:
             resp = self.ses.post(f'{self.url}/rule/{self.get_domain(container)}', json={
-                'target': f'{container.user_id}-{container.uuid}:{container.challenge.redirect_port}',
+                'target': f'{container.name}:{container.challenge.redirect_port}',
                 'source': None,
             })
             resp.raise_for_status()

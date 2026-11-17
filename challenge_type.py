@@ -33,5 +33,7 @@ class DockerChallenge(BaseChallenge):
         for container in WhaleContainer.query.filter_by(
             challenge_id=challenge.id
         ).all():
-            ControlUtil.try_remove_container(container.user_id)
+            # if this fails, the row survives the deletion (SET NULL) and
+            # auto-clean retries once the container expires
+            ControlUtil.remove_container(container)
         super().delete(challenge)
