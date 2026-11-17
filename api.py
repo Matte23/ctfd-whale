@@ -18,9 +18,9 @@ from .decorators import (
     frequency_limited,
     require_team_if_teams_mode,
 )
+from .utils import control
+from .utils import db as container_db
 from .utils.config import whale_config
-from .utils.control import ControlUtil
-from .utils.db import DBContainer
 from .utils.flags import generate_flag
 from .utils.routers import get_router
 
@@ -70,7 +70,7 @@ class AdminContainers(Resource):
     @admins_only
     def get(self):
         page, per_page = page_args()
-        pagination = DBContainer.get_alive_containers_page(page, per_page)
+        pagination = container_db.get_alive_containers_page(page, per_page)
         return {
             "success": True,
             "data": {
@@ -90,7 +90,7 @@ class AdminContainers(Resource):
         container_id = request.args.get("container_id", type=int)
         if container_id is None:
             abort(400, "Missing or invalid container_id", success=False)
-        container = DBContainer.get_container_by_id(container_id)
+        container = container_db.get_container(container_id)
         if container is None:
             return None, not_found("No such container")
         return container, None
@@ -100,7 +100,7 @@ class AdminContainers(Resource):
         container, error = self._requested_container()
         if error:
             return error
-        result, message = ControlUtil.renew_container(container)
+        result, message = control.renew_container(container)
         if not result:
             abort(409, message, success=False)
         return {"success": True, "message": message}
@@ -110,7 +110,7 @@ class AdminContainers(Resource):
         container, error = self._requested_container()
         if error:
             return error
-        result, message = ControlUtil.remove_container(container)
+        result, message = control.remove_container(container)
         return {"success": result, "message": message}
 
 
@@ -122,7 +122,7 @@ class UserContainers(Resource):
     def get(self):
         user_id = current_user.get_current_user().id
         challenge_id = current_challenge_id()
-        container = DBContainer.get_current_containers(user_id=user_id)
+        container = container_db.get_running_container(user_id=user_id)
         if not container:
             return {"success": True, "data": {}}
         timeout = int(whale_config("docker_timeout"))
@@ -148,13 +148,13 @@ class UserContainers(Resource):
     @frequency_limited
     def post(self):
         user_id = current_user.get_current_user().id
-        if DBContainer.get_current_containers(user_id=user_id):
+        if container_db.get_running_container(user_id=user_id):
             # never start a second container while the old one is still around
-            result, message = ControlUtil.try_remove_container(user_id)
+            result, message = control.remove_user_container(user_id)
             if not result:
                 abort(409, message, success=False)
         # also covers a removal still running elsewhere (e.g. auto-clean)
-        if DBContainer.has_any_container(user_id):
+        if container_db.has_any_container(user_id):
             abort(
                 409,
                 "Your previous instance is still being destroyed, "
@@ -162,7 +162,7 @@ class UserContainers(Resource):
                 success=False,
             )
 
-        current_count = DBContainer.get_all_alive_container_count()
+        current_count = container_db.count_alive_containers()
         if int(whale_config("docker_max_container_count")) <= int(current_count):
             abort(503, "Max container count exceed.", success=False)
 
@@ -171,7 +171,7 @@ class UserContainers(Resource):
         flag_id = create_flag_if_missing(
             user_id=user_id, challenge_id=challenge_id, flag_content=flag_content
         )
-        result, message, status = ControlUtil.try_add_container(
+        result, message, status = control.launch_container(
             user_id=user_id, challenge_id=challenge_id, flag_id=flag_id
         )
         if not result:
@@ -189,7 +189,7 @@ class UserContainers(Resource):
         user_id = current_user.get_current_user().id
         challenge_id = current_challenge_id()
         docker_max_renew_count = int(whale_config("docker_max_renew_count"))
-        container = DBContainer.get_current_containers(user_id)
+        container = container_db.get_running_container(user_id)
         if container is None:
             return not_found("Instance not found.")
         if container.challenge is None or container.challenge_id != challenge_id:
@@ -201,14 +201,14 @@ class UserContainers(Resource):
             )
         if container.renew_count >= docker_max_renew_count:
             abort(403, "Max renewal count exceed.", success=False)
-        result, message = ControlUtil.try_renew_container(user_id=user_id)
+        result, message = control.renew_user_container(user_id=user_id)
         return {"success": result, "message": message}
 
     @authed_only
     @frequency_limited
     def delete(self):
         user_id = current_user.get_current_user().id
-        result, message = ControlUtil.try_remove_container(user_id)
+        result, message = control.remove_user_container(user_id)
         if not result:
             return not_found(message)
         return {"success": True, "message": message}

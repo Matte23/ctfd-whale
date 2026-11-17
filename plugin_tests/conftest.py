@@ -69,7 +69,7 @@ class FakeScheduler:
 
 
 class FakeDocker:
-    """Replaces DockerUtils.add_container/remove_container."""
+    """Replaces docker_utils.add_container/remove_container."""
 
     def __init__(self):
         self.running = set()
@@ -95,19 +95,15 @@ def app(monkeypatch):
         whale = _import_plugin()
 
         fake = FakeDocker()
-        DockerUtils = plugin("utils.docker").DockerUtils
+        docker_utils = plugin("utils.docker")
         FrpRouter = plugin("utils.routers.frp").FrpRouter
         # the real code, for tests that drive it with a recording fake client
         originals = {
-            "add_container": DockerUtils.add_container,
+            "add_container": docker_utils.add_container,
             "frp_reload": FrpRouter.reload,
         }
-        monkeypatch.setattr(
-            DockerUtils, "add_container", staticmethod(fake.add_container)
-        )
-        monkeypatch.setattr(
-            DockerUtils, "remove_container", staticmethod(fake.remove_container)
-        )
+        monkeypatch.setattr(docker_utils, "add_container", fake.add_container)
+        monkeypatch.setattr(docker_utils, "remove_container", fake.remove_container)
         # load() builds a docker client once: never reach a real daemon
         monkeypatch.setattr(whale, "docker_client", lambda: None)
         monkeypatch.setattr(whale, "APScheduler", FakeScheduler)

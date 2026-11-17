@@ -2,8 +2,8 @@ from flask import current_app
 from requests import RequestException, session
 
 from ...models import WhaleContainer
+from .. import db as container_db
 from ..config import whale_config
-from ..db import DBContainer
 from ..exceptions import WhaleError
 from .base import BaseRouter
 
@@ -70,7 +70,7 @@ class FrpRouter(BaseRouter):
     def reload(self, exclude=None):
         rules = []
         # containers being removed lose their route right away
-        for container in DBContainer.get_all_running_container():
+        for container in container_db.get_running_containers():
             # no challenge: it was deleted, the container is waiting for cleanup
             if container.uuid == exclude or container.challenge is None:
                 continue
@@ -122,7 +122,7 @@ class FrpRouter(BaseRouter):
 
     def register(self, container: WhaleContainer):
         if container.challenge.redirect_type == "direct" and not container.port:
-            port = DBContainer.allocate_port(
+            port = container_db.allocate_port(
                 container,
                 range(
                     int(whale_config("frp_direct_port_minimum")),

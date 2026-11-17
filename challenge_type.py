@@ -6,7 +6,7 @@ from CTFd.plugins.challenges import BaseChallenge
 from flask import Blueprint
 
 from .models import DockerChallenges, WhaleContainer
-from .utils.control import ControlUtil
+from .utils import control
 from .utils.validation import CHALLENGE_FIELDS, validate_challenge
 
 
@@ -72,5 +72,5 @@ class DockerChallenge(BaseChallenge):
         ).all():
             # if this fails, the row is marked as removing and survives the
             # deletion (SET NULL): auto-clean retries the removal
-            ControlUtil.remove_container(container)
+            control.remove_container(container)
         super().delete(challenge)

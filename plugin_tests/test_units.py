@@ -53,11 +53,11 @@ def test_get_config_allowlist(app):
     ],
 )
 def test_image_tag(app, image, tag):
-    assert plugin("utils.docker").DockerUtils._image_tag(image) == tag
+    assert plugin("utils.docker")._image_tag(image) == tag
 
 
 def test_choose_node(app):
-    D = plugin("utils.docker").DockerUtils
+    D = plugin("utils.docker")
     WhaleError = plugin("utils.exceptions").WhaleError
     assert D.choose_node("reg:5000/img", ["linux-1", "windows-1"]) == "linux-1"
     assert D.choose_node("img:windows", ["linux-1", "windows-1"]) == "windows-1"
@@ -113,13 +113,11 @@ def _container(image):
 @pytest.mark.parametrize("swarm", [False, True])
 def test_grouped_launch(app, monkeypatch, swarm):
     docker_mod = plugin("utils.docker")
-    D = docker_mod.DockerUtils
+    D = docker_mod
     client = RecordingClient()
     monkeypatch.setattr(docker_mod, "docker_client", lambda: client)
-    monkeypatch.setattr(
-        D, "_create_network", staticmethod(lambda c, ct, **kw: FakeNetwork())
-    )
-    monkeypatch.setattr(D, "_wait_for_services", staticmethod(lambda c, ct: True))
+    monkeypatch.setattr(D, "_create_network", lambda c, ct, **kw: FakeNetwork())
+    monkeypatch.setattr(D, "_wait_for_services", lambda c, ct: True)
     set_whale_config(
         app,
         docker_use_swarm="true" if swarm else "false",
@@ -158,7 +156,7 @@ def test_swarm_wait(app, monkeypatch):
         )
 
     container = types.SimpleNamespace(name="5-abc")
-    wait = docker_mod.DockerUtils._wait_for_services
+    wait = docker_mod._wait_for_services
     assert wait(client("running"), container) is True
     assert wait(client("preparing"), container) is False
     with pytest.raises(WhaleError, match="No such image"):

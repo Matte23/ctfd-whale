@@ -13,10 +13,9 @@ from flask_apscheduler import APScheduler
 
 from .api import admin_namespace, page_args, user_namespace
 from .challenge_type import DockerChallenge
+from .utils import checks, control
+from .utils import db as container_db
 from .utils.cache import try_lock
-from .utils.checks import WhaleChecks
-from .utils.control import ControlUtil
-from .utils.db import DBContainer
 from .utils.docker import docker_client
 from .utils.exceptions import WhaleWarning
 from .utils.routers import get_router
@@ -64,14 +63,14 @@ def load(app):
     @page_blueprint.route("/admin/settings")
     @admins_only
     def admin_list_configs():
-        errors = WhaleChecks.perform()
+        errors = checks.run_checks()
         return render_template("whale_config.html", errors=errors)
 
     @page_blueprint.route("/admin/containers")
     @admins_only
     def admin_list_containers():
         page, per_page = page_args()
-        pagination = DBContainer.get_alive_containers_page(page, per_page)
+        pagination = container_db.get_alive_containers_page(page, per_page)
         # the mode picks an included template: only accept known values, and
         # fall back to "list" so a bad value can't stick in the session
         view_mode = request.args.get("mode", session.get("view_mode"))
@@ -95,8 +94,8 @@ def load(app):
             try:
                 # per container, not per user: rows of deleted users have no
                 # user_id. Includes containers whose removal failed: retried here.
-                for container in DBContainer.get_containers_to_clean():
-                    ControlUtil.remove_container(container)
+                for container in container_db.get_containers_to_clean():
+                    control.remove_container(container)
             finally:
                 lock.release()
 

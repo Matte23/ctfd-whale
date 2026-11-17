@@ -2,8 +2,8 @@ from flask import current_app
 from requests import HTTPError, RequestException, session
 
 from ...models import WhaleContainer
+from .. import db as container_db
 from ..config import whale_config
-from ..db import DBContainer
 from .base import BaseRouter
 
 REQUEST_TIMEOUT_SECONDS = 5
@@ -76,7 +76,7 @@ class TrpRouter(BaseRouter):
 
     def sync(self):
         # trp may have restarted and lost its rules: register them again
-        for container in DBContainer.get_all_running_container():
+        for container in container_db.get_running_containers():
             if container.challenge is not None:
                 self.register(container)
 

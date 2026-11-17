@@ -10,8 +10,8 @@ import re
 from docker.errors import DockerException
 from jinja2.exceptions import TemplateError
 
+from . import docker as docker_utils
 from .config import whale_config
-from .docker import DockerUtils
 from .exceptions import WhaleError
 from .templates import render_flag
 
@@ -69,7 +69,7 @@ def _check_image(image):
 
 def _check_memory(memory_limit):
     try:
-        DockerUtils.convert_readable_text(str(memory_limit or ""))
+        docker_utils.parse_memory_limit(str(memory_limit or ""))
     except (WhaleError, DockerException) as e:
         raise ValueError(f"Invalid memory limit {memory_limit!r}: {e}")
 
