@@ -2,10 +2,8 @@ import uuid
 from datetime import datetime
 
 from CTFd.models import Challenges, db
-from CTFd.utils import get_config
-from jinja2 import Template
 
-from .utils.config import whale_config
+from .utils.templates import container_context, render, render_http_subdomain
 
 
 class WhaleConfig(db.Model):
@@ -98,7 +96,7 @@ class WhaleContainer(db.Model):
 
     @property
     def http_subdomain(self):
-        return Template(whale_config("template_http_subdomain")).render(container=self)
+        return render_http_subdomain(self)
 
     def __init__(self, user_id, challenge_id, flag_id):
         self.user_id = user_id
@@ -113,21 +111,23 @@ class WhaleContainer(db.Model):
     def user_access(self):
         if self.challenge is None:
             return ""
-        return Template(
-            WhaleRedirectTemplate.query.filter_by(key=self.challenge.redirect_type)
-            .first()
-            .access_template
-        ).render(container=self, get_config=get_config)
+        template = WhaleRedirectTemplate.query.filter_by(
+            key=self.challenge.redirect_type
+        ).first()
+        if template is None:
+            return ""
+        return render(template.access_template, container=container_context(self))
 
     @property
     def frp_config(self):
         if self.challenge is None:
             return ""
-        return Template(
-            WhaleRedirectTemplate.query.filter_by(key=self.challenge.redirect_type)
-            .first()
-            .frp_template
-        ).render(container=self, get_config=get_config)
+        template = WhaleRedirectTemplate.query.filter_by(
+            key=self.challenge.redirect_type
+        ).first()
+        if template is None:
+            return ""
+        return render(template.frp_template, container=container_context(self))
 
     def __repr__(self):
         return "<WhaleContainer ID:{0} {1} {2} {3} {4}>".format(
