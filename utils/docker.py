@@ -1,5 +1,6 @@
 import json
 import random
+import time
 import uuid
 from collections import OrderedDict
 
@@ -30,6 +31,20 @@ def get_docker_client():
         return docker.DockerClient(base_url=get_config("whale:docker_api_url"))
 
 
+def docker_login(client):
+    """Log in with whale:docker_credentials, if set.
+
+    Format: "username:password" (Docker Hub) or "username:password:registry".
+    The registry may include a port, e.g. "user:pass:registry.example.com:5000".
+    """
+    credentials = get_config("whale:docker_credentials")
+    if not credentials or ":" not in str(credentials):
+        return
+    username, rest = str(credentials).split(":", 1)
+    password, _, registry = rest.partition(":")
+    client.login(username=username, password=password, registry=registry or None)
+
+
 class DockerUtils:
     @staticmethod
     def init():
@@ -41,12 +56,10 @@ class DockerUtils:
                 + "Please ensure the docker api url (first config item) is correct\n"
                 + "if you are using unix:///var/run/docker.sock, check if the socket is correctly mapped"
             )
-        credentials = get_config("whale:docker_credentials")
-        if credentials and credentials.count(":") == 2:
-            try:
-                DockerUtils.client.login(*credentials.split(":"))
-            except Exception:
-                raise WhaleError("docker.io failed to login, check your credentials")
+        try:
+            docker_login(DockerUtils.client)
+        except Exception:
+            raise WhaleError("Docker registry login failed, check your credentials")
 
     @staticmethod
     def add_container(container: WhaleContainer):
@@ -101,21 +114,18 @@ class DockerUtils:
 
     @staticmethod
     def _create_grouped_container_swarm(client, container: WhaleContainer):
-        range_prefix = CacheProvider(app=current_app).get_available_network_range()
+        try:
+            images = json.loads(
+                container.challenge.docker_image, object_pairs_hook=OrderedDict
+            )
+        except json.JSONDecodeError:
+            raise WhaleError(
+                "Challenge Image Parse Error\nplease check the challenge image string"
+            )
 
-        ipam_pool = docker.types.IPAMPool(subnet=range_prefix)
-        ipam_config = docker.types.IPAMConfig(
-            driver="default", pool_configs=[ipam_pool]
-        )
         network_name = f"{container.user_id}-{container.uuid}"
-        network = client.networks.create(
-            network_name,
-            internal=True,
-            ipam=ipam_config,
-            attachable=True,
-            labels={"prefix": range_prefix},
-            driver="overlay",
-            scope="swarm",
+        network = DockerUtils._create_network(
+            client, network_name, driver="overlay", scope="swarm"
         )
 
         dns = []
@@ -135,15 +145,6 @@ class DockerUtils:
                         )
 
         has_processed_main = False
-        try:
-            images = json.loads(
-                container.challenge.docker_image, object_pairs_hook=OrderedDict
-            )
-        except json.JSONDecodeError:
-            raise WhaleError(
-                "Challenge Image Parse Error\nplease check the challenge image string"
-            )
-
         for name, image in images.items():
             if has_processed_main:
                 container_name = f"{container.user_id}-{uuid.uuid4()}"
@@ -206,21 +207,8 @@ class DockerUtils:
                 "Challenge Image Parse Error\nplease check the challenge image string"
             )
 
-        range_prefix = CacheProvider(app=current_app).get_available_network_range()
-        ipam_pool = docker.types.IPAMPool(subnet=range_prefix)
-        ipam_config = docker.types.IPAMConfig(
-            driver="default", pool_configs=[ipam_pool]
-        )
         network_name = f"{container.user_id}-{container.uuid}"
-
-        network = client.networks.create(
-            network_name,
-            internal=True,
-            ipam=ipam_config,
-            attachable=True,
-            labels={"prefix": range_prefix},
-            driver="bridge",
-        )
+        network = DockerUtils._create_network(client, network_name, driver="bridge")
 
         dns = []
         auto_containers = get_config("whale:docker_auto_connect_containers", "").split(
@@ -290,14 +278,56 @@ class DockerUtils:
             redis_util = CacheProvider(app=current_app)
             for network in networks:
                 for c in auto_containers:
+                    if not c:
+                        continue
                     try:
                         network.disconnect(c, force=True)
                     except Exception:
                         pass
-                redis_util.add_available_network_range(
-                    network.attrs["Labels"]["prefix"]
+                prefix = (network.attrs.get("Labels") or {}).get("prefix")
+                DockerUtils._remove_network(network, attempts=10 if use_swarm else 1)
+                # only now is the subnet actually free again
+                if prefix:
+                    redis_util.add_available_network_range(prefix)
+
+    @staticmethod
+    def _create_network(client, network_name: str, **kwargs):
+        range_prefix = CacheProvider(app=current_app).get_available_network_range()
+        ipam_pool = docker.types.IPAMPool(subnet=range_prefix)
+        ipam_config = docker.types.IPAMConfig(
+            driver="default", pool_configs=[ipam_pool]
+        )
+        try:
+            return client.networks.create(
+                network_name,
+                internal=True,
+                ipam=ipam_config,
+                attachable=True,
+                labels={"prefix": range_prefix},
+                **kwargs,
+            )
+        except Exception:
+            # no network carries this subnet's label, so nothing else would return it
+            if range_prefix:
+                CacheProvider(app=current_app).add_available_network_range(
+                    range_prefix
                 )
+            raise
+
+    @staticmethod
+    def _remove_network(network, attempts: int):
+        # Swarm removes services asynchronously: the network stays "in use"
+        # until their tasks have stopped, so give it a few seconds.
+        for attempt in range(attempts):
+            try:
                 network.remove()
+                return
+            except docker.errors.NotFound:
+                return
+            except docker.errors.APIError:
+                if attempt == attempts - 1:
+                    raise
+                time.sleep(1)
 
     @staticmethod
     def convert_readable_text(text: str):

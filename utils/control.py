@@ -14,16 +14,31 @@ class ControlUtil:
         container = DBContainer.create_container_record(user_id, challenge_id, flag_id)
         try:
             DockerUtils.add_container(container)
-        except Exception as e:
-            DBContainer.remove_container_record(user_id)
+        except Exception:
             print(traceback.format_exc())
+            ControlUtil._discard_container(container)
             return False, "Docker Creation Error"
         ok, msg = Router.register(container)
         if not ok:
-            DockerUtils.remove_container(container)
-            DBContainer.remove_container_record(user_id)
+            ControlUtil._discard_container(container)
             return False, msg
         return True, "Container created"
+
+    @staticmethod
+    def _discard_container(container):
+        """Clean up after a failed creation.
+
+        Docker resources (network, already-started containers, subnet) may exist
+        even if creation failed partway, so remove them before the DB record.
+        If that fails (e.g. Docker unreachable), keep the record so auto-clean
+        retries the removal when the container expires.
+        """
+        try:
+            DockerUtils.remove_container(container)
+        except Exception:
+            print(traceback.format_exc())
+            return
+        DBContainer.remove_container_record(container)
 
     @staticmethod
     def try_remove_container(user_id: int):
@@ -36,9 +51,9 @@ class ControlUtil:
                 if not ok:
                     return False, msg
                 DockerUtils.remove_container(container)
-                DBContainer.remove_container_record(user_id)
+                DBContainer.remove_container_record(container)
                 return True, "Container destroyed"
-            except Exception as e:
+            except Exception:
                 print(traceback.format_exc())
         return False, "Failed when destroying instance, please contact admin!"
 

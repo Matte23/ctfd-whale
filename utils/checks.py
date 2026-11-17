@@ -2,7 +2,7 @@ from docker.errors import DockerException, TLSParameterError, APIError, requests
 
 from CTFd.utils import get_config
 
-from .docker import get_docker_client
+from .docker import docker_login, get_docker_client
 from .routers import _routers
 
 
@@ -20,12 +20,10 @@ class WhaleChecks:
         except (APIError, requests.RequestException):
             return "Unable to connect to Docker API, check your API connectivity"
 
-        credentials = get_config("whale:docker_credentials")
-        if credentials and credentials.count(":") == 2:
-            try:
-                client.login(*credentials.split(":"))
-            except DockerException:
-                return "Unable to log into docker registry, check your credentials"
+        try:
+            docker_login(client)
+        except DockerException:
+            return "Unable to log into docker registry, check your credentials"
         swarm = client.info()["Swarm"]
         if not swarm["ControlAvailable"]:
             return "Docker swarm not available. You should initialize a swarm first. ($ docker swarm init)"

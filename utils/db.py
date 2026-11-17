@@ -30,9 +30,11 @@ class DBContainer:
         return q.first()
 
     @staticmethod
-    def remove_container_record(user_id: int):
+    def remove_container_record(container: WhaleContainer):
+        # delete by id, not by user: removing one record must never drop
+        # another container's record and orphan its docker resources
         q = db.session.query(WhaleContainer)
-        q = q.filter(WhaleContainer.user_id == user_id)
+        q = q.filter(WhaleContainer.id == container.id)
         q.delete()
         db.session.commit()
 
