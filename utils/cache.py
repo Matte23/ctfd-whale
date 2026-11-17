@@ -129,13 +129,15 @@ class RedisCacheProvider(FlaskRedis):
         self.sadd(self.global_network_key, *ranges)
 
     def get_available_network_range(self):
-        return self.spop(self.global_network_key).decode()
+        r = self.spop(self.global_network_key)
+        return r.decode() if r is not None else None
 
     def add_available_port(self, port):
         self.sadd(self.global_port_key, str(port))
 
     def get_available_port(self):
-        return int(self.spop(self.global_port_key))
+        r = self.spop(self.global_port_key)
+        return int(r) if r is not None else None
 
     def acquire_lock(self):
         lock = self.lock(name=self.key, timeout=10)

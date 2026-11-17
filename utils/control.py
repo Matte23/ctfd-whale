@@ -18,7 +18,11 @@ class ControlUtil:
             print(traceback.format_exc())
             ControlUtil._discard_container(container)
             return False, "Docker Creation Error"
-        ok, msg = Router.register(container)
+        try:
+            ok, msg = Router.register(container)
+        except Exception:
+            print(traceback.format_exc())
+            ok, msg = False, "Unable to register the instance, please try again later."
         if not ok:
             ControlUtil._discard_container(container)
             return False, msg
@@ -35,6 +39,7 @@ class ControlUtil:
         """
         try:
             DockerUtils.remove_container(container)
+            Router.release(container)
         except Exception:
             print(traceback.format_exc())
             return
@@ -51,6 +56,8 @@ class ControlUtil:
                 if not ok:
                     return False, msg
                 DockerUtils.remove_container(container)
+                # only release the port once the old container is really gone
+                Router.release(container)
                 DBContainer.remove_container_record(container)
                 return True, "Container destroyed"
             except Exception:

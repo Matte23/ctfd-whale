@@ -6,6 +6,7 @@ from collections import OrderedDict
 
 import docker
 from CTFd.utils import get_config
+from docker.utils import parse_bytes
 from flask import current_app
 
 from ..models import WhaleContainer
@@ -86,7 +87,7 @@ class DockerUtils:
 
     @staticmethod
     def _create_standalone_container_swarm(client, container: WhaleContainer):
-        dns = get_config("whale:docker_dns", "").split(",")
+        dns = [d for d in get_config("whale:docker_dns", "").split(",") if d]
         node = DockerUtils.choose_node(
             container.challenge.docker_image,
             get_config("whale:docker_swarm_nodes", "").split(","),
@@ -96,7 +97,7 @@ class DockerUtils:
             image=container.challenge.docker_image,
             name=f"{container.user_id}-{container.uuid}",
             env={"FLAG": container.flag.content},
-            dns_config=docker.types.DNSConfig(nameservers=dns),
+            dns_config=docker.types.DNSConfig(nameservers=dns) if dns else None,
             networks=[
                 get_config("whale:docker_auto_connect_network", "ctfd_frp-containers")
             ],
@@ -162,13 +163,14 @@ class DockerUtils:
                     docker.types.NetworkAttachmentConfig(network_name, aliases=[name])
                 ],
                 env={"FLAG": container.flag.content},
-                dns_config=docker.types.DNSConfig(nameservers=dns),
+                dns_config=docker.types.DNSConfig(nameservers=dns) if dns else None,
                 resources=docker.types.Resources(
                     mem_limit=DockerUtils.convert_readable_text(
                         container.challenge.memory_limit
                     ),
                     cpu_limit=int(container.challenge.cpu_limit * 1e9),
                 ),
+                init=container.challenge.init,
                 labels={"whale_id": f"{container.user_id}-{container.uuid}"},
                 hostname=name,
                 constraints=["node.labels.name==" + node],
@@ -248,6 +250,8 @@ class DockerUtils:
                     container.challenge.memory_limit
                 ),
                 nano_cpus=int(container.challenge.cpu_limit * 1e9),
+                init=container.challenge.init,
+                privileged=container.challenge.privileged,
                 labels={"whale_id": f"{container.user_id}-{container.uuid}"},
             )
 
@@ -293,6 +297,8 @@ class DockerUtils:
     @staticmethod
     def _create_network(client, network_name: str, **kwargs):
         range_prefix = CacheProvider(app=current_app).get_available_network_range()
+        if not range_prefix:
+            raise WhaleError("No available subnets for challenge networks")
         ipam_pool = docker.types.IPAMPool(subnet=range_prefix)
         ipam_config = docker.types.IPAMConfig(
             driver="default", pool_configs=[ipam_pool]
@@ -308,10 +314,7 @@ class DockerUtils:
             )
         except Exception:
             # no network carries this subnet's label, so nothing else would return it
-            if range_prefix:
-                CacheProvider(app=current_app).add_available_network_range(
-                    range_prefix
-                )
+            CacheProvider(app=current_app).add_available_network_range(range_prefix)
             raise
 
     @staticmethod
@@ -331,14 +334,14 @@ class DockerUtils:
 
     @staticmethod
     def convert_readable_text(text: str):
-        lower_text = text.lower()
-        if lower_text.endswith("k"):
-            return int(text[:-1]) * 1024
-        if lower_text.endswith("m"):
-            return int(text[:-1]) * 1024 * 1024
-        if lower_text.endswith("g"):
-            return int(text[:-1]) * 1024 * 1024 * 1024
-        return 0
+        # Docker treats 0 as "no limit": never let a bad value turn into that.
+        text = (text or "").strip()
+        if not text:
+            raise WhaleError("Challenge memory limit is empty")
+        limit = parse_bytes(text)  # raises DockerException on invalid values
+        if limit <= 0:
+            raise WhaleError(f"Invalid challenge memory limit: {text}")
+        return limit
 
     @staticmethod
     def choose_node(image: str, nodes: list[str]):

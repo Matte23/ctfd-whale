@@ -4,7 +4,7 @@ from flask import current_app
 from requests import session, RequestException
 
 from CTFd.models import db
-from CTFd.utils import get_config, set_config, logging
+from CTFd.utils import get_config, set_config
 
 from .base import BaseRouter
 from ..cache import CacheProvider
@@ -104,23 +104,20 @@ class FrpRouter(BaseRouter):
         elif container.challenge.redirect_type == 'http':
             # config['subdomain'] = container.http_subdomain
             pass
-        self.reload()
+        try:
+            self.reload()
+        except WhaleError as e:
+            print(e.message)
+            return False, 'Unable to register the instance, please try again later.'
         return True, 'success'
 
     def unregister(self, container: WhaleContainer):
-        if container.challenge.redirect_type == 'direct':
-            try:
-                redis_util = CacheProvider(app=current_app)
-                redis_util.add_available_port(container.port)
-            except Exception as e:
-                logging.log(
-                    'whale', 'Error deleting port from cache',
-                    name=container.user.name,
-                    challenge_id=container.challenge_id,
-                )
-                return False, 'Error deleting port from cache'
         self.reload(exclude=container.uuid)
         return True, 'success'
+
+    def release(self, container: WhaleContainer):
+        if container.challenge.redirect_type == 'direct' and container.port:
+            CacheProvider(app=current_app).add_available_port(container.port)
 
     def check_availability(self):
         try:
