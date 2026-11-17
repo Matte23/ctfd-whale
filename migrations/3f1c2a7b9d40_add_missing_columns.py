@@ -9,8 +9,8 @@ Revises:
 Create Date: 2026-11-17
 
 """
-import sqlalchemy as sa
 
+import sqlalchemy as sa
 from CTFd.plugins.migrations import get_all_tables, get_columns_for_table
 
 revision = "3f1c2a7b9d40"
@@ -26,9 +26,7 @@ COLUMNS = {
         sa.Column("memory_limit", sa.Text(), nullable=True, server_default="128m"),
         sa.Column("cpu_limit", sa.Float(), nullable=True, server_default="0.5"),
         sa.Column("init", sa.Boolean(), nullable=True, server_default=sa.false()),
-        sa.Column(
-            "privileged", sa.Boolean(), nullable=True, server_default=sa.false()
-        ),
+        sa.Column("privileged", sa.Boolean(), nullable=True, server_default=sa.false()),
         sa.Column("docker_image", sa.Text(), nullable=True),
         sa.Column("redirect_type", sa.Text(), nullable=True),
         sa.Column("redirect_port", sa.Integer(), nullable=True),

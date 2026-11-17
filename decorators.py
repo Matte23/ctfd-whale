@@ -17,14 +17,14 @@ FREQUENCY_LIMIT_SECONDS = 60
 def challenge_visible(func):
     @functools.wraps(func)
     def _challenge_visible(*args, **kwargs):
-        challenge_id = request.args.get('challenge_id')
+        challenge_id = request.args.get("challenge_id")
         if is_admin():
             challenge = Challenges.query.filter(
                 Challenges.id == challenge_id,
                 Challenges.type == "docker",
             ).first()
             if not challenge:
-                abort(404, 'no such challenge', success=False)
+                abort(404, "no such challenge", success=False)
         else:
             challenge = Challenges.query.filter(
                 Challenges.id == challenge_id,
@@ -32,9 +32,9 @@ def challenge_visible(func):
                 and_(Challenges.state != "hidden", Challenges.state != "locked"),
             ).first()
             if not challenge:
-                abort(403, 'challenge not visible', success=False)
+                abort(403, "challenge not visible", success=False)
             if not _prerequisites_met(challenge):
-                abort(403, 'challenge not unlocked', success=False)
+                abort(403, "challenge not unlocked", success=False)
         return func(*args, **kwargs)
 
     return _challenge_visible
@@ -70,7 +70,7 @@ def require_team_if_teams_mode(func):
     @functools.wraps(func)
     def _require_team_if_teams_mode(*args, **kwargs):
         if is_teams_mode() and not is_admin() and get_current_team() is None:
-            abort(403, 'You must join a team first.', success=False)
+            abort(403, "You must join a team first.", success=False)
         return func(*args, **kwargs)
 
     return _require_team_if_teams_mode
@@ -89,15 +89,15 @@ def frequency_limited(func):
 
         lock = user_lock(user_id)
         if not lock.acquire():
-            abort(429, 'Request Too Fast!', success=False)
+            abort(429, "Request Too Fast!", success=False)
         # check and record the limit while holding the lock, so two
         # concurrent requests of the same user can't both get through
         try:
             if cache.get(limit_key):
                 abort(
                     429,
-                    f'Frequency limit, you should wait at least '
-                    f'{FREQUENCY_LIMIT_SECONDS} seconds.',
+                    f"Frequency limit, you should wait at least "
+                    f"{FREQUENCY_LIMIT_SECONDS} seconds.",
                     success=False,
                 )
             result = func(*args, **kwargs)

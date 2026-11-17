@@ -12,8 +12,8 @@ Revises: 3f1c2a7b9d40
 Create Date: 2026-11-17
 
 """
-import sqlalchemy as sa
 
+import sqlalchemy as sa
 from CTFd.plugins.migrations import get_all_tables, get_columns_for_table
 
 revision = "8e5d0b6a1c27"

@@ -8,7 +8,6 @@ from jinja2 import Template
 from ..models import DockerChallenges
 from .config import whale_config
 
-
 # Flags must not be predictable: use the OS CSPRNG. SystemRandom has the same
 # API as the random module, so existing templates using random.* keep working.
 _random = secrets.SystemRandom()

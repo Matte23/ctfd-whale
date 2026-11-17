@@ -5,8 +5,8 @@ from .frp import FrpRouter
 from .trp import TrpRouter
 
 ROUTERS = {
-    'frp': FrpRouter,
-    'trp': TrpRouter,
+    "frp": FrpRouter,
+    "trp": TrpRouter,
 }
 
 

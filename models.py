@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from CTFd.models import db, Challenges
+from CTFd.models import Challenges, db
 from CTFd.utils import get_config
 from jinja2 import Template
 
@@ -98,9 +98,7 @@ class WhaleContainer(db.Model):
 
     @property
     def http_subdomain(self):
-        return Template(whale_config("template_http_subdomain")).render(
-            container=self
-        )
+        return Template(whale_config("template_http_subdomain")).render(container=self)
 
     def __init__(self, user_id, challenge_id, flag_id):
         self.user_id = user_id

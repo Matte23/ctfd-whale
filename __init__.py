@@ -14,15 +14,14 @@ from flask_apscheduler import APScheduler
 
 from .api import AdminContainers, admin_namespace, user_namespace
 from .challenge_type import DockerChallenge
+from .utils.cache import job_lock
 from .utils.checks import WhaleChecks
 from .utils.control import ControlUtil
-from .utils.cache import job_lock
 from .utils.db import DBContainer
 from .utils.docker import docker_client
 from .utils.exceptions import WhaleWarning
 from .utils.routers import get_router
 from .utils.setup import setup_default_configs
-
 
 AUTO_CLEAN_INTERVAL_SECONDS = 10
 # Upper bound of one auto-clean run; the lock expires after it in any case.
@@ -108,15 +107,27 @@ def load(app):
     try:
         docker_client()
     except Exception as e:
-        warnings.warn(f"Docker initialization failed, check your configs: {e}", WhaleWarning, stacklevel=2)
+        warnings.warn(
+            f"Docker initialization failed, check your configs: {e}",
+            WhaleWarning,
+            stacklevel=2,
+        )
     try:
         router = get_router()
         ok, msg = router.check_availability()
         if not ok:
-            warnings.warn(f"Router not available, check your configs: {msg}", WhaleWarning, stacklevel=2)
+            warnings.warn(
+                f"Router not available, check your configs: {msg}",
+                WhaleWarning,
+                stacklevel=2,
+            )
         router.sync()
     except Exception as e:
-        warnings.warn(f"Router initialization failed, check your configs: {e}", WhaleWarning, stacklevel=2)
+        warnings.warn(
+            f"Router initialization failed, check your configs: {e}",
+            WhaleWarning,
+            stacklevel=2,
+        )
 
     scheduler = APScheduler()
     scheduler.init_app(app)

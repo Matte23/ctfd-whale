@@ -12,15 +12,11 @@ from CTFd.utils.decorators.visibility import check_challenge_visibility
 from flask import request
 from flask_restx import Namespace, Resource, abort
 
-from .decorators import (
-    challenge_visible,
-    frequency_limited,
-    require_team_if_teams_mode,
-)
+from .decorators import challenge_visible, frequency_limited, require_team_if_teams_mode
+from .utils.config import whale_config
 from .utils.control import ControlUtil
 from .utils.db import DBContainer
 from .utils.flags import generate_flag
-from .utils.config import whale_config
 from .utils.routers import get_router
 
 admin_namespace = Namespace("ctfd-whale-admin")

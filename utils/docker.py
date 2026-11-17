@@ -91,9 +91,7 @@ class DockerUtils:
 
         if container.challenge.docker_image.startswith("{"):
             if use_swarm:
-                DockerUtils._create_grouped_container_swarm(
-                    docker_client(), container
-                )
+                DockerUtils._create_grouped_container_swarm(docker_client(), container)
             else:
                 DockerUtils._create_grouped_container_classic(
                     docker_client(), container
@@ -121,9 +119,7 @@ class DockerUtils:
             name=container.name,
             env={"FLAG": container.flag.content},
             dns_config=docker.types.DNSConfig(nameservers=dns) if dns else None,
-            networks=[
-                whale_config("docker_auto_connect_network")
-            ],
+            networks=[whale_config("docker_auto_connect_network")],
             resources=docker.types.Resources(
                 mem_limit=DockerUtils.convert_readable_text(
                     container.challenge.memory_limit
@@ -236,9 +232,7 @@ class DockerUtils:
         network = DockerUtils._create_network(client, container, driver="bridge")
 
         dns = []
-        auto_containers = whale_config("docker_auto_connect_containers").split(
-            ","
-        )
+        auto_containers = whale_config("docker_auto_connect_containers").split(",")
         for c in auto_containers:
             if not c:
                 continue
@@ -320,7 +314,9 @@ class DockerUtils:
             for config in (network.attrs.get("IPAM") or {}).get("Config") or []:
                 if config.get("Subnet"):
                     try:
-                        used.append(ipaddress.ip_network(config["Subnet"], strict=False))
+                        used.append(
+                            ipaddress.ip_network(config["Subnet"], strict=False)
+                        )
                     except ValueError:
                         pass
         return used
@@ -335,9 +331,7 @@ class DockerUtils:
             for subnet in ipaddress.ip_network(whale_config("docker_subnet")).subnets(
                 new_prefix=int(whale_config("docker_subnet_new_prefix"))
             )
-            if not any(
-                subnet.version == u.version and subnet.overlaps(u) for u in used
-            )
+            if not any(subnet.version == u.version and subnet.overlaps(u) for u in used)
         ]
         subnet = DBContainer.allocate_subnet(container, candidates)
         if subnet is None:

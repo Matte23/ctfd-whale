@@ -1,4 +1,4 @@
-from docker.errors import DockerException, TLSParameterError, APIError, requests
+from docker.errors import APIError, DockerException, TLSParameterError, requests
 
 from .config import whale_config
 from .docker import build_docker_client, docker_login

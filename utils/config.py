@@ -1,4 +1,5 @@
 """Plugin settings: the single place that knows every key and its default."""
+
 from CTFd.models import Configs
 from CTFd.utils import get_config, set_config
 
@@ -69,7 +70,8 @@ def fill_missing_configs():
     """
     keys = [PREFIX + key for key in DEFAULTS]
     existing = {
-        key for (key,) in Configs.query.with_entities(Configs.key).filter(
+        key
+        for (key,) in Configs.query.with_entities(Configs.key).filter(
             Configs.key.in_(keys)
         )
     }
