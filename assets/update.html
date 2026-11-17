@@ -62,7 +62,7 @@
                 Enable Docker init
             </small>
         </label>
-        <input type="checkbox" name="init" value="{{ challenge.init }}" value="false">
+        <input type="checkbox" name="init" value="false" {% if challenge.init %}checked{% endif %}>
     </div>
     <div class="form-group">
         <label for="value">Privileged<br>
@@ -70,6 +70,6 @@
                 Run container in privileged mode
             </small>
         </label>
-        <input type="checkbox" name="privileged" value="{{ challenge.privileged }}" value="false">
+        <input type="checkbox" name="privileged" value="false" {% if challenge.privileged %}checked{% endif %}>
     </div>
 {% endblock %}
