@@ -1,3 +1,4 @@
+import ipaddress
 import json
 import random
 import time
@@ -5,31 +6,41 @@ import uuid
 from collections import OrderedDict
 
 import docker
-from CTFd.utils import get_config
 from docker.utils import parse_bytes
-from flask import current_app
 
 from ..models import WhaleContainer
-from .cache import CacheProvider
+from .config import whale_config
+from .db import DBContainer
 from .exceptions import WhaleError
+from .state import whale_state
+
+# Settings the docker client is built from: when one changes, it is rebuilt.
+CLIENT_SETTINGS = (
+    "docker_api_url",
+    "docker_use_ssl",
+    "docker_ssl_ca_cert",
+    "docker_ssl_client_cert",
+    "docker_ssl_client_key",
+    "docker_credentials",
+)
 
 
-def get_docker_client():
-    if get_config("whale:docker_use_ssl", False):
+def build_docker_client():
+    """A new, not logged in, docker client from the current settings."""
+    if whale_config("docker_use_ssl"):
         tls_config = docker.tls.TLSConfig(
             verify=True,
-            ca_cert=get_config("whale:docker_ssl_ca_cert") or None,
+            ca_cert=whale_config("docker_ssl_ca_cert") or None,
             client_cert=(
-                get_config("whale:docker_ssl_client_cert"),
-                get_config("whale:docker_ssl_client_key"),
+                whale_config("docker_ssl_client_cert"),
+                whale_config("docker_ssl_client_key"),
             ),
         )
         return docker.DockerClient(
-            base_url=get_config("whale:docker_api_url"),
+            base_url=whale_config("docker_api_url"),
             tls=tls_config,
         )
-    else:
-        return docker.DockerClient(base_url=get_config("whale:docker_api_url"))
+    return docker.DockerClient(base_url=whale_config("docker_api_url"))
 
 
 def docker_login(client):
@@ -38,7 +49,7 @@ def docker_login(client):
     Format: "username:password" (Docker Hub) or "username:password:registry".
     The registry may include a port, e.g. "user:pass:registry.example.com:5000".
     """
-    credentials = get_config("whale:docker_credentials")
+    credentials = whale_config("docker_credentials")
     if not credentials or ":" not in str(credentials):
         return
     username, rest = str(credentials).split(":", 1)
@@ -46,69 +57,63 @@ def docker_login(client):
     client.login(username=username, password=password, registry=registry or None)
 
 
+def docker_client():
+    """The shared, logged in docker client of this process.
+
+    Rebuilt when one of CLIENT_SETTINGS changes, however it was changed.
+    Only cached once the login succeeded, so a failed login is retried.
+    """
+    state = whale_state()
+    key = tuple(whale_config(setting) for setting in CLIENT_SETTINGS)
+    cached = state.get("docker")
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    try:
+        client = build_docker_client()
+    except Exception:
+        raise WhaleError(
+            "Docker Connection Error\n"
+            + "Please ensure the docker api url (first config item) is correct\n"
+            + "if you are using unix:///var/run/docker.sock, check if the socket is correctly mapped"
+        )
+    try:
+        docker_login(client)
+    except Exception:
+        raise WhaleError("Docker registry login failed, check your credentials")
+    state["docker"] = (key, client)
+    return client
+
+
 class DockerUtils:
-    client = None
-    # whale:refresh is set to a new token on every settings save (assets/config.js);
-    # each worker compares it with the token its client was built with.
-    _refresh = None
-
-    @staticmethod
-    def init():
-        refresh = get_config("whale:refresh")
-        try:
-            DockerUtils.client = get_docker_client()
-        except Exception:
-            raise WhaleError(
-                "Docker Connection Error\n"
-                + "Please ensure the docker api url (first config item) is correct\n"
-                + "if you are using unix:///var/run/docker.sock, check if the socket is correctly mapped"
-            )
-        # only mark as up to date once the new client exists; a failed login
-        # below keeps the (anonymous) client, as before
-        DockerUtils._refresh = refresh
-        try:
-            docker_login(DockerUtils.client)
-        except Exception:
-            raise WhaleError("Docker registry login failed, check your credentials")
-
-    @staticmethod
-    def get_client():
-        if (
-            DockerUtils.client is None
-            or DockerUtils._refresh != get_config("whale:refresh")
-        ):
-            DockerUtils.init()
-        return DockerUtils.client
-
     @staticmethod
     def add_container(container: WhaleContainer):
-        use_swarm = get_config("whale:docker_use_swarm", False)
+        use_swarm = whale_config("docker_use_swarm")
 
         if container.challenge.docker_image.startswith("{"):
             if use_swarm:
                 DockerUtils._create_grouped_container_swarm(
-                    DockerUtils.get_client(), container
+                    docker_client(), container
                 )
             else:
                 DockerUtils._create_grouped_container_classic(
-                    DockerUtils.get_client(), container
+                    docker_client(), container
                 )
         else:
             if use_swarm:
                 DockerUtils._create_standalone_container_swarm(
-                    DockerUtils.get_client(), container
+                    docker_client(), container
                 )
             else:
                 DockerUtils._create_standalone_container_classic(
-                    DockerUtils.get_client(), container
+                    docker_client(), container
                 )
 
     @staticmethod
     def _create_standalone_container_swarm(client, container: WhaleContainer):
-        dns = [d for d in get_config("whale:docker_dns", "").split(",") if d]
+        dns = [d for d in whale_config("docker_dns").split(",") if d]
         node = DockerUtils.choose_node(
             container.challenge.docker_image,
-            get_config("whale:docker_swarm_nodes", "").split(","),
+            whale_config("docker_swarm_nodes").split(","),
         )
 
         client.services.create(
@@ -117,7 +122,7 @@ class DockerUtils:
             env={"FLAG": container.flag.content},
             dns_config=docker.types.DNSConfig(nameservers=dns) if dns else None,
             networks=[
-                get_config("whale:docker_auto_connect_network", "ctfd_frp-containers")
+                whale_config("docker_auto_connect_network")
             ],
             resources=docker.types.Resources(
                 mem_limit=DockerUtils.convert_readable_text(
@@ -144,11 +149,11 @@ class DockerUtils:
 
         network_name = container.name
         network = DockerUtils._create_network(
-            client, network_name, driver="overlay", scope="swarm"
+            client, container, driver="overlay", scope="swarm"
         )
 
         dns = []
-        containers = get_config("whale:docker_auto_connect_containers", "").split(",")
+        containers = whale_config("docker_auto_connect_containers").split(",")
         for c in containers:
             if not c:
                 continue
@@ -170,7 +175,7 @@ class DockerUtils:
             else:
                 container_name = container.name
                 node = DockerUtils.choose_node(
-                    image, get_config("whale:docker_swarm_nodes", "").split(",")
+                    image, whale_config("docker_swarm_nodes").split(",")
                 )
                 has_processed_main = True
 
@@ -197,8 +202,8 @@ class DockerUtils:
 
     @staticmethod
     def _create_standalone_container_classic(client, container: WhaleContainer):
-        dns = [d for d in get_config("whale:docker_dns", "").split(",") if d]
-        network_name = get_config("whale:docker_auto_connect_network", "bridge")
+        dns = [d for d in whale_config("docker_dns").split(",") if d]
+        network_name = whale_config("docker_auto_connect_network")
 
         client.containers.run(
             image=container.challenge.docker_image,
@@ -228,10 +233,10 @@ class DockerUtils:
             )
 
         network_name = container.name
-        network = DockerUtils._create_network(client, network_name, driver="bridge")
+        network = DockerUtils._create_network(client, container, driver="bridge")
 
         dns = []
-        auto_containers = get_config("whale:docker_auto_connect_containers", "").split(
+        auto_containers = whale_config("docker_auto_connect_containers").split(
             ","
         )
         for c in auto_containers:
@@ -276,15 +281,15 @@ class DockerUtils:
     @staticmethod
     def remove_container(container: WhaleContainer):
         whale_id = container.name
-        use_swarm = get_config("whale:docker_use_swarm", False)
+        use_swarm = whale_config("docker_use_swarm")
 
         if use_swarm:
-            for s in DockerUtils.get_client().services.list(
+            for s in docker_client().services.list(
                 filters={"label": f"whale_id={whale_id}"}
             ):
                 s.remove()
         else:
-            for c in DockerUtils.get_client().containers.list(
+            for c in docker_client().containers.list(
                 all=True, filters={"label": f"whale_id={whale_id}"}
             ):
                 try:
@@ -292,12 +297,9 @@ class DockerUtils:
                 except Exception:
                     pass
 
-        networks = DockerUtils.get_client().networks.list(names=[whale_id])
+        networks = docker_client().networks.list(names=[whale_id])
         if len(networks) > 0:
-            auto_containers = get_config(
-                "whale:docker_auto_connect_containers", ""
-            ).split(",")
-            redis_util = CacheProvider(app=current_app)
+            auto_containers = whale_config("docker_auto_connect_containers").split(",")
             for network in networks:
                 for c in auto_containers:
                     if not c:
@@ -306,34 +308,54 @@ class DockerUtils:
                         network.disconnect(c, force=True)
                     except Exception:
                         pass
-                prefix = (network.attrs.get("Labels") or {}).get("prefix")
+                # the subnet is freed with the container row, deleted only
+                # once this succeeded
                 DockerUtils._remove_network(network, attempts=10 if use_swarm else 1)
-                # only now is the subnet actually free again
-                if prefix:
-                    redis_util.add_available_network_range(prefix)
 
     @staticmethod
-    def _create_network(client, network_name: str, **kwargs):
-        range_prefix = CacheProvider(app=current_app).get_available_network_range()
-        if not range_prefix:
+    def _used_subnets(client):
+        """Subnets of every existing docker network, ours or not."""
+        used = []
+        for network in client.networks.list():
+            for config in (network.attrs.get("IPAM") or {}).get("Config") or []:
+                if config.get("Subnet"):
+                    try:
+                        used.append(ipaddress.ip_network(config["Subnet"], strict=False))
+                    except ValueError:
+                        pass
+        return used
+
+    @staticmethod
+    def _create_network(client, container: WhaleContainer, **kwargs):
+        # Overlapping networks are skipped, not only exact matches: this also
+        # covers networks created before subnets were stored in the database.
+        used = DockerUtils._used_subnets(client)
+        candidates = [
+            str(subnet)
+            for subnet in ipaddress.ip_network(whale_config("docker_subnet")).subnets(
+                new_prefix=int(whale_config("docker_subnet_new_prefix"))
+            )
+            if not any(
+                subnet.version == u.version and subnet.overlaps(u) for u in used
+            )
+        ]
+        subnet = DBContainer.allocate_subnet(container, candidates)
+        if subnet is None:
             raise WhaleError("No available subnets for challenge networks")
-        ipam_pool = docker.types.IPAMPool(subnet=range_prefix)
+        ipam_pool = docker.types.IPAMPool(subnet=subnet)
         ipam_config = docker.types.IPAMConfig(
             driver="default", pool_configs=[ipam_pool]
         )
-        try:
-            return client.networks.create(
-                network_name,
-                internal=True,
-                ipam=ipam_config,
-                attachable=True,
-                labels={"prefix": range_prefix},
-                **kwargs,
-            )
-        except Exception:
-            # no network carries this subnet's label, so nothing else would return it
-            CacheProvider(app=current_app).add_available_network_range(range_prefix)
-            raise
+        # on failure the subnet stays on the row until the container is
+        # discarded, which frees it
+        return client.networks.create(
+            container.name,
+            internal=True,
+            ipam=ipam_config,
+            attachable=True,
+            labels={"whale_id": container.name},
+            **kwargs,
+        )
 
     @staticmethod
     def _remove_network(network, attempts: int):

@@ -1,4 +1,3 @@
-import fcntl
 import warnings
 
 from CTFd.api import CTFd_API_v1
@@ -8,7 +7,7 @@ from CTFd.plugins import (
 )
 from CTFd.plugins.challenges import CHALLENGE_CLASSES
 from CTFd.plugins.migrations import upgrade
-from CTFd.utils import get_config, set_config
+from CTFd.utils import set_config
 from CTFd.utils.decorators import admins_only
 from flask import Blueprint, render_template, request, session
 from flask_apscheduler import APScheduler
@@ -17,23 +16,23 @@ from .api import AdminContainers, admin_namespace, user_namespace
 from .challenge_type import DockerChallenge
 from .utils.checks import WhaleChecks
 from .utils.control import ControlUtil
+from .utils.cache import job_lock
 from .utils.db import DBContainer
-from .utils.docker import DockerUtils
+from .utils.docker import docker_client
 from .utils.exceptions import WhaleWarning
-from .utils.routers import Router
+from .utils.routers import get_router
 from .utils.setup import setup_default_configs
 
 
-# Keep a reference to the lock file for the life of the process: if it is
-# garbage-collected, the file is closed and the fcntl lock is released.
-_scheduler_lock_file = None
+AUTO_CLEAN_INTERVAL_SECONDS = 10
+# Upper bound of one auto-clean run; the lock expires after it in any case.
+AUTO_CLEAN_LOCK_SECONDS = 300
 
 # Layouts of the admin instances page: templates/containers/<mode>.containers.html
 VIEW_MODES = ("list", "card")
 
 
 def load(app):
-    global _scheduler_lock_file
     app.config["RESTX_ERROR_404_HELP"] = False
     plugin_name = __name__.split(".")[-1]
     set_config("whale:plugin_name", plugin_name)
@@ -41,8 +40,8 @@ def load(app):
     # tables up to date (CTFd skips them on SQLite and only runs create_all)
     app.db.create_all()
     upgrade(plugin_name=plugin_name)
-    if not get_config("whale:setup"):
-        setup_default_configs()
+    # every startup: settings added by newer versions get their default too
+    setup_default_configs()
 
     register_plugin_assets_directory(
         app,
@@ -93,37 +92,42 @@ def load(app):
 
     def auto_clean_container():
         with app.app_context():
-            # per container, not per user: rows of deleted users have no user_id
-            for container in DBContainer.get_all_expired_container():
-                ControlUtil.remove_container(container)
+            # every worker runs this job: the lock lets one of them do the work
+            lock = job_lock("auto-clean", timeout=AUTO_CLEAN_LOCK_SECONDS)
+            if not lock.acquire():
+                return
+            try:
+                # per container, not per user: rows of deleted users have no user_id
+                for container in DBContainer.get_all_expired_container():
+                    ControlUtil.remove_container(container)
+            finally:
+                lock.release()
 
     app.register_blueprint(page_blueprint)
 
     try:
-        Router.check_availability()
-        DockerUtils.init()
-    except Exception:
-        warnings.warn("Initialization Failed. Please check your configs.", WhaleWarning)
-
+        docker_client()
+    except Exception as e:
+        warnings.warn(f"Docker initialization failed, check your configs: {e}", WhaleWarning, stacklevel=2)
     try:
-        lock_file = open("/tmp/ctfd_whale.lock", "w")
-        try:
-            fcntl.lockf(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except IOError:
-            lock_file.close()
-            raise
-        _scheduler_lock_file = lock_file
+        router = get_router()
+        ok, msg = router.check_availability()
+        if not ok:
+            warnings.warn(f"Router not available, check your configs: {msg}", WhaleWarning, stacklevel=2)
+        router.sync()
+    except Exception as e:
+        warnings.warn(f"Router initialization failed, check your configs: {e}", WhaleWarning, stacklevel=2)
 
-        scheduler = APScheduler()
-        scheduler.init_app(app)
-        scheduler.start()
-        scheduler.add_job(
-            id="whale-auto-clean",
-            func=auto_clean_container,
-            trigger="interval",
-            seconds=10,
-        )
-
-        print("[CTFd Whale] Started successfully")
-    except IOError:
-        pass
+    scheduler = APScheduler()
+    scheduler.init_app(app)
+    scheduler.start()
+    scheduler.add_job(
+        id="whale-auto-clean",
+        func=auto_clean_container,
+        trigger="interval",
+        seconds=AUTO_CLEAN_INTERVAL_SECONDS,
+        # skip a run instead of piling them up when one takes longer
+        max_instances=1,
+        coalesce=True,
+    )
+    print("[CTFd Whale] Started successfully")

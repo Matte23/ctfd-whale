@@ -18,15 +18,8 @@ class BaseRouter:
     def unregister(self, container: WhaleContainer):
         pass
 
-    def release(self, container: WhaleContainer):
-        """Give back resources (e.g. ports) held for the container.
-
-        Called only once the container is gone from docker, so they can't be
-        handed to someone else while the old container still uses them.
-        """
-        pass
-
-    def reload(self):
+    def sync(self):
+        """Bring the router in line with the running containers (at startup)."""
         pass
 
     def check_availability(self) -> typing.Tuple[bool, str]:

@@ -1,16 +1,13 @@
-import warnings
+from CTFd.utils import set_config
+from requests import RequestException, session
 
-from flask import current_app
-from requests import session, RequestException
-
-from CTFd.models import db
-from CTFd.utils import get_config, set_config
-
-from .base import BaseRouter
-from ..cache import CacheProvider
-from ..db import DBContainer
-from ..exceptions import WhaleError, WhaleWarning
 from ...models import WhaleContainer
+from ..config import whale_config
+from ..db import DBContainer
+from ..exceptions import WhaleError
+from .base import BaseRouter
+
+REQUEST_TIMEOUT_SECONDS = 5
 
 
 class FrpRouter(BaseRouter):
@@ -31,15 +28,19 @@ class FrpRouter(BaseRouter):
     def __init__(self):
         super().__init__()
         self.ses = session()
-        self.url = get_config("whale:frp_api_url").rstrip("/")
-        self.common = ''
-        try:
-            CacheProvider(app=current_app).init_port_sets()
-        except Exception:
-            warnings.warn(
-                "cache initialization failed",
-                WhaleWarning
-            )
+
+    @property
+    def url(self):
+        return whale_config("frp_api_url").rstrip("/")
+
+    def _common_section(self):
+        common = whale_config("frp_config_template")
+        if '[common]' in common:
+            return common
+        remote = self.ses.get(f'{self.url}/api/config', timeout=REQUEST_TIMEOUT_SECONDS)
+        remote.raise_for_status()
+        set_config("whale:frp_config_template", remote.text)
+        return remote.text
 
     def reload(self, exclude=None):
         rules = []
@@ -61,23 +62,14 @@ class FrpRouter(BaseRouter):
             rules.append(self.FrpRule(name, config))
 
         try:
-            if not self.common:
-                common = get_config("whale:frp_config_template", '')
-                if '[common]' in common:
-                    self.common = common
-                else:
-                    remote = self.ses.get(f'{self.url}/api/config')
-                    assert remote.status_code == 200
-                    set_config("whale:frp_config_template", remote.text)
-                    self.common = remote.text
-            config = self.common + '\n' + '\n'.join(str(r) for r in rules)
-            assert self.ses.put(
-                f'{self.url}/api/config', config, timeout=5
-            ).status_code == 200
-            assert self.ses.get(
-                f'{self.url}/api/reload', timeout=5
-            ).status_code == 200
-        except (RequestException, AssertionError) as e:
+            config = self._common_section() + '\n' + '\n'.join(str(r) for r in rules)
+            self.ses.put(
+                f'{self.url}/api/config', config, timeout=REQUEST_TIMEOUT_SECONDS
+            ).raise_for_status()
+            self.ses.get(
+                f'{self.url}/api/reload', timeout=REQUEST_TIMEOUT_SECONDS
+            ).raise_for_status()
+        except RequestException as e:
             raise WhaleError(
                 '\nfrpc request failed\n' +
                 (f'{e}\n' if str(e) else '') +
@@ -86,25 +78,25 @@ class FrpRouter(BaseRouter):
 
     def access(self, container: WhaleContainer):
         if container.challenge.redirect_type == 'direct':
-            return f'nc {get_config("whale:frp_direct_ip_address", "127.0.0.1")} {container.port}'
+            return f'nc {whale_config("frp_direct_ip_address")} {container.port}'
         elif container.challenge.redirect_type == 'http':
-            host = get_config("whale:frp_http_domain_suffix", "")
-            port = get_config("whale:frp_http_port", "80")
+            host = whale_config("frp_http_domain_suffix")
+            port = whale_config("frp_http_port")
             host += f':{port}' if port != 80 else ''
             return f'<a target="_blank" href="http://{container.http_subdomain}.{host}/">Link to the Challenge</a>'
         return ''
 
     def register(self, container: WhaleContainer):
-        if container.challenge.redirect_type == 'direct':
-            if not container.port:
-                port = CacheProvider(app=current_app).get_available_port()
-                if not port:
-                    return False, 'No available ports. Please wait for a few minutes.'
-                container.port = port
-                db.session.commit()
-        elif container.challenge.redirect_type == 'http':
-            # config['subdomain'] = container.http_subdomain
-            pass
+        if container.challenge.redirect_type == 'direct' and not container.port:
+            port = DBContainer.allocate_port(
+                container,
+                range(
+                    int(whale_config("frp_direct_port_minimum")),
+                    int(whale_config("frp_direct_port_maximum")) + 1,
+                ),
+            )
+            if port is None:
+                return False, 'No available ports. Please wait for a few minutes.'
         try:
             self.reload()
         except WhaleError as e:
@@ -116,16 +108,10 @@ class FrpRouter(BaseRouter):
         self.reload(exclude=container.uuid)
         return True, 'success'
 
-    def release(self, container: WhaleContainer):
-        # only "direct" containers get a port; don't rely on container.challenge,
-        # which is None once the challenge has been deleted
-        if container.port:
-            CacheProvider(app=current_app).add_available_port(container.port)
-
     def check_availability(self):
         try:
             resp = self.ses.get(f'{self.url}/api/status', timeout=2.0)
-        except RequestException as e:
+        except RequestException:
             return False, 'Unable to access frpc admin api'
         if resp.status_code == 401:
             return False, 'frpc admin api unauthorized'

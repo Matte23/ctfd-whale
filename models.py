@@ -5,6 +5,8 @@ from CTFd.models import db, Challenges
 from CTFd.utils import get_config
 from jinja2 import Template
 
+from .utils.config import whale_config
+
 
 class WhaleConfig(db.Model):
     key = db.Column(db.String(length=128), primary_key=True)
@@ -72,7 +74,11 @@ class WhaleContainer(db.Model):
     # docker name and whale_id label of the resources: "<user_id>-<uuid>".
     # Stored so the resources can still be found once user_id is NULL.
     name = db.Column(db.String(256))
-    port = db.Column(db.Integer, nullable=True, default=0)
+    # Resources held by the container, allocated in utils/db.py. Unique, so
+    # two containers can never get the same one; deleting the row (only done
+    # once the docker resources are gone) frees them. NULL: none held.
+    port = db.Column(db.Integer, nullable=True, unique=True)
+    subnet = db.Column(db.String(64), nullable=True, unique=True)
     flag_id = db.Column(
         db.Integer, db.ForeignKey("flags.id", ondelete="SET NULL"), nullable=True
     )
@@ -92,9 +98,9 @@ class WhaleContainer(db.Model):
 
     @property
     def http_subdomain(self):
-        return Template(
-            get_config("whale:template_http_subdomain", "{{ container.uuid }}")
-        ).render(container=self)
+        return Template(whale_config("template_http_subdomain")).render(
+            container=self
+        )
 
     def __init__(self, user_id, challenge_id, flag_id):
         self.user_id = user_id

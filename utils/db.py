@@ -1,9 +1,20 @@
 import datetime
+import random
 
 from CTFd.models import db
-from CTFd.utils import get_config
+from sqlalchemy.exc import IntegrityError
 
 from ..models import WhaleContainer, WhaleRedirectTemplate
+from .config import whale_config
+
+# Retries when another worker takes the same port/subnet at the same time.
+ALLOCATION_ATTEMPTS = 10
+
+
+def _expiry_cutoff():
+    """Containers started before this are expired."""
+    timeout = int(whale_config("docker_timeout"))
+    return datetime.datetime.now() - datetime.timedelta(seconds=timeout)
 
 
 class DBContainer:
@@ -44,25 +55,18 @@ class DBContainer:
 
     @staticmethod
     def get_all_expired_container():
-        timeout = int(get_config("whale:docker_timeout", "3600"))
-
         q = db.session.query(WhaleContainer)
-        q = q.filter(
-            WhaleContainer.start_time
-            < datetime.datetime.now() - datetime.timedelta(seconds=timeout)
-        )
+        q = q.filter(WhaleContainer.start_time < _expiry_cutoff())
         return q.all()
 
     @staticmethod
-    def get_all_alive_container():
-        timeout = int(get_config("whale:docker_timeout", "3600"))
-
+    def _alive_query():
         q = db.session.query(WhaleContainer)
-        q = q.filter(
-            WhaleContainer.start_time
-            >= datetime.datetime.now() - datetime.timedelta(seconds=timeout)
-        )
-        return q.all()
+        return q.filter(WhaleContainer.start_time >= _expiry_cutoff())
+
+    @staticmethod
+    def get_all_alive_container():
+        return DBContainer._alive_query().all()
 
     @staticmethod
     def get_all_container():
@@ -71,26 +75,50 @@ class DBContainer:
 
     @staticmethod
     def get_all_alive_container_page(page_start: int, page_end: int):
-        timeout = int(get_config("whale:docker_timeout", "3600"))
-
-        q = db.session.query(WhaleContainer)
-        q = q.filter(
-            WhaleContainer.start_time
-            >= datetime.datetime.now() - datetime.timedelta(seconds=timeout)
-        )
-        q = q.slice(page_start, page_end)
+        q = DBContainer._alive_query().slice(page_start, page_end)
         return q.all()
 
     @staticmethod
     def get_all_alive_container_count():
-        timeout = int(get_config("whale:docker_timeout", "3600"))
+        return DBContainer._alive_query().count()
 
-        q = db.session.query(WhaleContainer)
-        q = q.filter(
-            WhaleContainer.start_time
-            >= datetime.datetime.now() - datetime.timedelta(seconds=timeout)
-        )
-        return q.count()
+    @staticmethod
+    def _allocate(container: WhaleContainer, column: str, candidates):
+        """Store a free value of ``column`` (port/subnet) on the container.
+
+        Picks at random among the candidates no row holds yet. The unique
+        constraint on the column catches another worker taking the same
+        value meanwhile: then roll back and try again.
+        Returns the value, or None when nothing is free.
+        """
+        candidates = list(candidates)
+        for _ in range(ALLOCATION_ATTEMPTS):
+            attribute = getattr(WhaleContainer, column)
+            taken = {
+                value
+                for (value,) in db.session.query(attribute).filter(
+                    attribute.isnot(None)
+                )
+            }
+            free = [c for c in candidates if c not in taken]
+            if not free:
+                return None
+            value = random.choice(free)
+            setattr(container, column, value)
+            try:
+                db.session.commit()
+                return value
+            except IntegrityError:
+                db.session.rollback()
+        return None
+
+    @staticmethod
+    def allocate_port(container: WhaleContainer, candidates):
+        return DBContainer._allocate(container, "port", candidates)
+
+    @staticmethod
+    def allocate_subnet(container: WhaleContainer, candidates):
+        return DBContainer._allocate(container, "subnet", candidates)
 
 
 class DBRedirectTemplate:

@@ -1,16 +1,18 @@
 from docker.errors import DockerException, TLSParameterError, APIError, requests
 
-from CTFd.utils import get_config
-
-from .docker import docker_login, get_docker_client
-from .routers import _routers
+from .config import whale_config
+from .docker import build_docker_client, docker_login
+from .routers import ROUTERS, get_router
 
 
 class WhaleChecks:
+    """Settings page checks. They must only read: the page runs them on every load."""
+
     @staticmethod
     def check_docker_api():
+        # a fresh client, to test the settings as they are now
         try:
-            client = get_docker_client()
+            client = build_docker_client()
         except TLSParameterError as e:
             return f"Docker TLS Parameters incorrect ({e})"
         except DockerException as e:
@@ -24,16 +26,17 @@ class WhaleChecks:
             docker_login(client)
         except DockerException:
             return "Unable to log into docker registry, check your credentials"
-        swarm = client.info()["Swarm"]
-        if not swarm["ControlAvailable"]:
-            return "Docker swarm not available. You should initialize a swarm first. ($ docker swarm init)"
+        if whale_config("docker_use_swarm"):
+            swarm = client.info()["Swarm"]
+            if not swarm["ControlAvailable"]:
+                return "Docker swarm not available. You should initialize a swarm first. ($ docker swarm init)"
 
     @staticmethod
-    def check_frp_connection():
-        router_conftype = get_config("whale:router_type", "frp")
-        if router_conftype not in _routers:
-            return "invalid router type: " + router_conftype
-        ok, msg = _routers[router_conftype]().check_availability()
+    def check_router_connection():
+        router_type = whale_config("router_type")
+        if router_type not in ROUTERS:
+            return "invalid router type: " + router_type
+        ok, msg = get_router().check_availability()
         if not ok:
             return msg
 

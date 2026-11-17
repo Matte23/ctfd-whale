@@ -1,7 +1,6 @@
 from datetime import datetime
 
 from CTFd.plugins.ctfd_cheaters import create_flag_if_missing
-from CTFd.utils import get_config
 from CTFd.utils import user as current_user
 from CTFd.utils.decorators import (
     admins_only,
@@ -21,7 +20,8 @@ from .decorators import (
 from .utils.control import ControlUtil
 from .utils.db import DBContainer
 from .utils.flags import generate_flag
-from .utils.routers import Router
+from .utils.config import whale_config
+from .utils.routers import get_router
 
 admin_namespace = Namespace("ctfd-whale-admin")
 user_namespace = Namespace("ctfd-whale-user")
@@ -97,7 +97,7 @@ class UserContainers(Resource):
         container = DBContainer.get_current_containers(user_id=user_id)
         if not container:
             return {"success": True, "data": {}}
-        timeout = int(get_config("whale:docker_timeout", "3600"))
+        timeout = int(whale_config("docker_timeout"))
         # challenge_id is NULL when the challenge was deleted meanwhile
         if container.challenge_id is None or container.challenge_id != int(
             challenge_id
@@ -107,7 +107,7 @@ class UserContainers(Resource):
             "success": True,
             "data": {
                 "lan_domain": container.name,
-                "user_access": Router.access(container),
+                "user_access": get_router().access(container),
                 "remaining_time": timeout
                 - int((datetime.now() - container.start_time).total_seconds()),
             },
@@ -130,7 +130,7 @@ class UserContainers(Resource):
                 abort(403, message, success=False)
 
         current_count = DBContainer.get_all_alive_container_count()
-        if int(get_config("whale:docker_max_container_count")) <= int(current_count):
+        if int(whale_config("docker_max_container_count")) <= int(current_count):
             abort(403, "Max container count exceed.", success=False)
 
         challenge_id = int(request.args.get("challenge_id"))
@@ -156,7 +156,7 @@ class UserContainers(Resource):
     def patch():
         user_id = current_user.get_current_user().id
         challenge_id = request.args.get("challenge_id")
-        docker_max_renew_count = int(get_config("whale:docker_max_renew_count", 5))
+        docker_max_renew_count = int(whale_config("docker_max_renew_count"))
         container = DBContainer.get_current_containers(user_id)
         if container is None:
             abort(403, "Instance not found.", success=False)

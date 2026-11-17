@@ -6,6 +6,7 @@ from CTFd.utils import get_config
 from jinja2 import Template
 
 from ..models import DockerChallenges
+from .config import whale_config
 
 
 # Flags must not be predictable: use the OS CSPRNG. SystemRandom has the same
@@ -25,9 +26,7 @@ def generate_flag(challenge_id: int):
     if challenge.flag_template != "":
         flag_template = challenge.flag_template
     else:
-        flag_template = get_config(
-            "whale:template_chall_flag", '{{ "flag{"+uuid.uuid4()|string+"}" }}'
-        )
+        flag_template = whale_config("template_chall_flag")
 
     return Template(flag_template).render(
         uuid=uuid, random=_random, get_config=get_config, random_string=random_string

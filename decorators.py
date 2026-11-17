@@ -4,11 +4,11 @@ from CTFd.cache import cache
 from CTFd.models import Challenges, Solves
 from CTFd.utils.config import is_teams_mode
 from CTFd.utils.user import get_current_team, get_current_user, is_admin
-from flask import current_app, request
+from flask import request
 from flask_restx import abort
 from sqlalchemy.sql import and_
 
-from .utils.cache import CacheProvider
+from .utils.cache import user_lock
 
 # Minimum time between two container actions (launch/renew/destroy) of a user.
 FREQUENCY_LIMIT_SECONDS = 60
@@ -87,8 +87,8 @@ def frequency_limited(func):
         # must not reset the limit
         limit_key = f"whale:frequency_limit:{user_id}"
 
-        redis_util = CacheProvider(app=current_app, user_id=user_id)
-        if not redis_util.acquire_lock():
+        lock = user_lock(user_id)
+        if not lock.acquire():
             abort(429, 'Request Too Fast!', success=False)
         # check and record the limit while holding the lock, so two
         # concurrent requests of the same user can't both get through
@@ -106,7 +106,7 @@ def frequency_limited(func):
             if isinstance(result, dict) and result.get("success"):
                 cache.set(limit_key, True, timeout=FREQUENCY_LIMIT_SECONDS)
         finally:
-            redis_util.release_lock()
+            lock.release()
         return result
 
     return _frequency_limited

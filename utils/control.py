@@ -1,11 +1,10 @@
 import datetime
 import traceback
 
-from CTFd.utils import get_config
-
+from .config import whale_config
 from .db import DBContainer, db
 from .docker import DockerUtils
-from .routers import Router
+from .routers import get_router
 
 
 class ControlUtil:
@@ -19,7 +18,7 @@ class ControlUtil:
             ControlUtil._discard_container(container)
             return False, "Docker Creation Error"
         try:
-            ok, msg = Router.register(container)
+            ok, msg = get_router().register(container)
         except Exception:
             print(traceback.format_exc())
             ok, msg = False, "Unable to register the instance, please try again later."
@@ -32,14 +31,14 @@ class ControlUtil:
     def _discard_container(container):
         """Clean up after a failed creation.
 
-        Docker resources (network, already-started containers, subnet) may exist
-        even if creation failed partway, so remove them before the DB record.
-        If that fails (e.g. Docker unreachable), keep the record so auto-clean
-        retries the removal when the container expires.
+        Docker resources (network, already-started containers) may exist even
+        if creation failed partway, so remove them before the DB record, whose
+        deletion frees the port and subnet. If that fails (e.g. Docker
+        unreachable), keep the record so auto-clean retries the removal when
+        the container expires.
         """
         try:
             DockerUtils.remove_container(container)
-            Router.release(container)
         except Exception:
             print(traceback.format_exc())
             return
@@ -56,12 +55,12 @@ class ControlUtil:
     def remove_container(container):
         for _ in range(3):  # configurable? as "onerror_retry_cnt"
             try:
-                ok, msg = Router.unregister(container)
+                ok, msg = get_router().unregister(container)
                 if not ok:
                     return False, msg
                 DockerUtils.remove_container(container)
-                # only release the port once the old container is really gone
-                Router.release(container)
+                # deleting the row frees the port and subnet: only do it once
+                # the old container is really gone
                 DBContainer.remove_container_record(container)
                 return True, "Container destroyed"
             except Exception:
@@ -77,7 +76,7 @@ class ControlUtil:
 
     @staticmethod
     def renew_container(container):
-        timeout = int(get_config("whale:docker_timeout", "3600"))
+        timeout = int(whale_config("docker_timeout"))
         container.start_time = container.start_time + datetime.timedelta(
             seconds=timeout
         )
