@@ -50,10 +50,6 @@ class DockerChallenges(Challenges):
     redirect_type = db.Column(db.Text, default=0)
     redirect_port = db.Column(db.Integer, default=0)
 
-    def __init__(self, *args, **kwargs):
-        kwargs["initial"] = kwargs["value"]
-        super(DockerChallenges, self).__init__(**kwargs)
-
 
 class WhaleContainer(db.Model):
     # status values. REMOVING: removal failed partway, auto-clean retries it;

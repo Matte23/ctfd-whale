@@ -134,7 +134,7 @@ class FrpRouter(BaseRouter):
         try:
             self.reload()
         except WhaleError as e:
-            print(e.message)
+            current_app.logger.error("[CTFd Whale] %s", e.message)
             return False, "Unable to register the instance, please try again later."
         return True, "success"
 

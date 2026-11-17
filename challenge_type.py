@@ -15,20 +15,26 @@ def _submitted(request):
     return {key: data[key] for key in data}
 
 
+# CTFd serves plugin assets from the plugin's directory: their URL must use
+# its real name ("CTFd.plugins.<dir>.challenge_type"). Page and API URLs
+# stay fixed under /plugins/ctfd-whale.
+_ASSETS = f"/plugins/{__name__.split('.')[-2]}/assets/"
+
+
 class DockerChallenge(BaseChallenge):
     id = "docker"  # Unique identifier used to register challenges
     name = "docker"  # Name of a challenge type
     templates = {
-        "create": "/plugins/ctfd-whale/assets/create.html",
-        "update": "/plugins/ctfd-whale/assets/update.html",
-        "view": "/plugins/ctfd-whale/assets/view.html",
+        "create": _ASSETS + "create.html",
+        "update": _ASSETS + "update.html",
+        "view": _ASSETS + "view.html",
     }
     scripts = {
-        "create": "/plugins/ctfd-whale/assets/create.js",
-        "update": "/plugins/ctfd-whale/assets/update.js",
-        "view": "/plugins/ctfd-whale/assets/view.js",
+        "create": _ASSETS + "create.js",
+        "update": _ASSETS + "update.js",
+        "view": _ASSETS + "view.js",
     }
-    route = "/plugins/ctfd-whale/assets/"
+    route = _ASSETS
     # Blueprint used to access the static_folder directory.
     blueprint = Blueprint(
         "ctfd-whale-challenge",

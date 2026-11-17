@@ -7,7 +7,6 @@ from CTFd.plugins import (
 )
 from CTFd.plugins.challenges import CHALLENGE_CLASSES
 from CTFd.plugins.migrations import upgrade
-from CTFd.utils import set_config
 from CTFd.utils.decorators import admins_only
 from flask import Blueprint, render_template, request, session
 from flask_apscheduler import APScheduler
@@ -32,9 +31,8 @@ VIEW_MODES = ("list", "card")
 
 
 def load(app):
-    app.config["RESTX_ERROR_404_HELP"] = False
+    # the plugin's directory: CTFd keys migrations and serves assets by it
     plugin_name = __name__.split(".")[-1]
-    set_config("whale:plugin_name", plugin_name)
     # create_all() creates missing tables; the migrations bring existing
     # tables up to date (CTFd skips them on SQLite and only runs create_all)
     app.db.create_all()
@@ -82,7 +80,6 @@ def load(app):
         session["view_mode"] = view_mode
         return render_template(
             "whale_containers.html",
-            plugin_name=plugin_name,
             view_mode=view_mode,
             containers=pagination.items,
             pages=pagination.pages,
@@ -142,4 +139,4 @@ def load(app):
         max_instances=1,
         coalesce=True,
     )
-    print("[CTFd Whale] Started successfully")
+    app.logger.info("[CTFd Whale] Started successfully")

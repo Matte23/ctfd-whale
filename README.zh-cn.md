@@ -11,6 +11,15 @@
 - 管理员可以在后台查看启动的容器
 - 支持自定义flag生成方式与web题目子域名生成方式
 
+## 依赖
+
+- CTFd 3.8.9（本插件适配的版本）。
+- CTFd 插件 `ctfd_cheaters`，安装于 `CTFd/plugins/ctfd_cheaters`：ctfd-whale
+  通过其 `create_flag_if_missing()` 将每位选手生成的 flag 保存为个人 flag。
+  缺少该插件时 CTFd 无法加载 ctfd-whale。
+- 生产环境需将 Redis 作为 CTFd 的缓存（`REDIS_URL` 或 `REDIS_HOST`）：用于
+  每个用户的锁，以及保证自动清理同一时间只在一个 worker 中运行。
+
 ## 使用方式
 
 请参考[安装指南](docs/install.zh-cn.md)

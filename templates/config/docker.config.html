@@ -103,6 +103,7 @@
     </small><br>
     {% for config, val in {
         "Auto Connect Containers": ("docker_auto_connect_containers","Decide which container will be connected to multi-container-network automatically. Separated by commas."),
+        "DNS Containers": ("docker_dns_containers", "Which of the auto connect containers serve DNS to the challenge containers. Separated by commas. Empty: with Swarm, those whose name contains 'dns'; without Swarm, all of them."),
         "Multi-Container Network Subnet": ("docker_subnet", "Subnet which will be used by auto created networks for multi-container challenges."),
         "Multi-Container Network Subnet New Prefix": ("docker_subnet_new_prefix", "Prefix for auto created network.")
     }.items() %}

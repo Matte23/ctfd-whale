@@ -26,6 +26,12 @@ LEGACY_LABEL = "whale_id"
 SWARM_START_TIMEOUT_SECONDS = 60
 _FAILED_TASK_STATES = ("failed", "rejected")
 
+
+def _split(value) -> list:
+    """Comma-separated setting -> list of non-empty, stripped items."""
+    return [item.strip() for item in str(value or "").split(",") if item.strip()]
+
+
 # Settings the docker client is built from: when one changes, it is rebuilt.
 CLIENT_SETTINGS = (
     "docker_api_url",
@@ -105,20 +111,156 @@ class DockerUtils:
         raises WhaleError if they fail to start.
         """
         client = docker_client()
-        grouped = container.challenge.docker_image.startswith("{")
-        if whale_config("docker_use_swarm"):
-            if grouped:
-                DockerUtils._create_grouped_container_swarm(client, container)
-            else:
-                DockerUtils._create_standalone_container_swarm(client, container)
-            # services.create() returns at once: wait for the tasks to run,
-            # so e.g. a missing image is reported instead of a dead instance
-            return DockerUtils._wait_for_services(client, container)
-        if grouped:
-            DockerUtils._create_grouped_container_classic(client, container)
+        swarm = whale_config("docker_use_swarm")
+        images = DockerUtils._images(container)
+        if container.challenge.docker_image.startswith("{"):
+            # grouped: a private network, plus the helper containers
+            network = DockerUtils._create_network(
+                client,
+                container,
+                **(
+                    {"driver": "overlay", "scope": "swarm"}
+                    if swarm
+                    else {"driver": "bridge"}
+                ),
+            )
+            network_name = network.name
+            dns = DockerUtils._connect_helpers(client, network, swarm)
         else:
-            DockerUtils._create_standalone_container_classic(client, container)
-        return True
+            network_name = whale_config("docker_auto_connect_network")
+            dns = _split(whale_config("docker_dns"))
+
+        if not swarm:
+            for hostname, image, name in images:
+                DockerUtils._run_container(
+                    client, container, image, name, network_name, hostname, dns
+                )
+            return True
+
+        # all services of one instance on the same node, chosen for the main image
+        main_image = images[0][1]
+        constraints = DockerUtils.node_constraints(
+            main_image,
+            DockerUtils.choose_node(
+                main_image, _split(whale_config("docker_swarm_nodes"))
+            ),
+        )
+        for hostname, image, name in images:
+            DockerUtils._create_service(
+                client, container, image, name, network_name, hostname, dns, constraints
+            )
+        # services.create() returns at once: wait for the tasks to run,
+        # so e.g. a missing image is reported instead of a dead instance
+        return DockerUtils._wait_for_services(client, container)
+
+    @staticmethod
+    def _images(container: WhaleContainer):
+        """(hostname, image, docker name) of each container to start.
+
+        A single image: one entry without hostname. Grouped ('{"web":
+        "img:1", ...}'): one per entry; the first one is the main container
+        and carries the WhaleContainer's name.
+        """
+        image = container.challenge.docker_image
+        if not image.startswith("{"):
+            return [(None, image.strip(), container.name)]
+        try:
+            images = json.loads(image, object_pairs_hook=OrderedDict)
+        except json.JSONDecodeError:
+            raise WhaleError(
+                "Challenge Image Parse Error\nplease check the challenge image string"
+            )
+        return [
+            (
+                hostname,
+                value.strip(),
+                container.name if i == 0 else f"{container.user_id}-{uuid.uuid4()}",
+            )
+            for i, (hostname, value) in enumerate(images.items())
+        ]
+
+    @staticmethod
+    def _connect_helpers(client, network, swarm: bool):
+        """Connect the auto-connect containers to the network.
+
+        Returns the IPs of those serving DNS (see _is_dns_helper).
+        """
+        dns = []
+        for name in _split(whale_config("docker_auto_connect_containers")):
+            try:
+                network.connect(name)
+                if not DockerUtils._is_dns_helper(name, swarm):
+                    continue
+                attrs = client.containers.get(name).attrs
+                details = attrs["NetworkSettings"]["Networks"].get(network.name)
+                if details and details.get("IPAddress"):
+                    dns.append(details["IPAddress"])
+            except Exception:
+                current_app.logger.warning(
+                    "[CTFd Whale] could not connect %s to network %s",
+                    name,
+                    network.name,
+                    exc_info=True,
+                )
+        return dns
+
+    @staticmethod
+    def _is_dns_helper(name: str, swarm: bool) -> bool:
+        explicit = _split(whale_config("docker_dns_containers"))
+        if explicit:
+            return name in explicit
+        # setting empty: the behavior of older versions
+        return "dns" in name if swarm else True
+
+    @staticmethod
+    def _create_service(
+        client, container, image, name, network_name, hostname, dns, constraints
+    ):
+        challenge = container.challenge
+        # grouped containers: reachable by their short name on the network
+        extra = {}
+        if hostname:
+            extra["hostname"] = hostname
+            network = docker.types.NetworkAttachmentConfig(
+                network_name, aliases=[hostname]
+            )
+        else:
+            network = network_name
+        client.services.create(
+            image=image,
+            name=name,
+            env={"FLAG": container.flag.content},
+            networks=[network],
+            **extra,
+            dns_config=docker.types.DNSConfig(nameservers=dns) if dns else None,
+            resources=docker.types.Resources(
+                mem_limit=DockerUtils.convert_readable_text(challenge.memory_limit),
+                cpu_limit=int(challenge.cpu_limit * 1e9),
+            ),
+            init=challenge.init,
+            labels={LABEL: container.name},
+            constraints=constraints,
+            endpoint_spec=docker.types.EndpointSpec(mode="dnsrr", ports={}),
+        )
+
+    @staticmethod
+    def _run_container(client, container, image, name, network_name, hostname, dns):
+        challenge = container.challenge
+        extra = {"hostname": hostname} if hostname else {}
+        client.containers.run(
+            image=image,
+            name=name,
+            environment={"FLAG": container.flag.content},
+            detach=True,
+            network=network_name,
+            **extra,
+            dns=dns or None,
+            mem_limit=DockerUtils.convert_readable_text(challenge.memory_limit),
+            nano_cpus=int(challenge.cpu_limit * 1e9),
+            init=challenge.init,
+            privileged=challenge.privileged,
+            labels={LABEL: container.name},
+        )
 
     @staticmethod
     def _wait_for_services(client, container: WhaleContainer) -> bool:
@@ -151,177 +293,6 @@ class DockerUtils:
             if time.monotonic() >= deadline:
                 return False
             time.sleep(1)
-
-    @staticmethod
-    def _create_standalone_container_swarm(client, container: WhaleContainer):
-        dns = [d for d in whale_config("docker_dns").split(",") if d]
-        node = DockerUtils.choose_node(
-            container.challenge.docker_image,
-            whale_config("docker_swarm_nodes").split(","),
-        )
-
-        client.services.create(
-            image=container.challenge.docker_image,
-            name=container.name,
-            env={"FLAG": container.flag.content},
-            dns_config=docker.types.DNSConfig(nameservers=dns) if dns else None,
-            networks=[whale_config("docker_auto_connect_network")],
-            resources=docker.types.Resources(
-                mem_limit=DockerUtils.convert_readable_text(
-                    container.challenge.memory_limit
-                ),
-                cpu_limit=int(container.challenge.cpu_limit * 1e9),
-            ),
-            init=container.challenge.init,
-            labels={LABEL: container.name},
-            constraints=["node.labels.name==" + node],
-            endpoint_spec=docker.types.EndpointSpec(mode="dnsrr", ports={}),
-        )
-
-    @staticmethod
-    def _create_grouped_container_swarm(client, container: WhaleContainer):
-        try:
-            images = json.loads(
-                container.challenge.docker_image, object_pairs_hook=OrderedDict
-            )
-        except json.JSONDecodeError:
-            raise WhaleError(
-                "Challenge Image Parse Error\nplease check the challenge image string"
-            )
-
-        network_name = container.name
-        network = DockerUtils._create_network(
-            client, container, driver="overlay", scope="swarm"
-        )
-
-        dns = []
-        containers = whale_config("docker_auto_connect_containers").split(",")
-        for c in containers:
-            if not c:
-                continue
-            network.connect(c)
-            if "dns" in c:
-                network.reload()
-                for name in network.attrs["Containers"]:
-                    if network.attrs["Containers"][name]["Name"] == c:
-                        dns.append(
-                            network.attrs["Containers"][name]["IPv4Address"].split("/")[
-                                0
-                            ]
-                        )
-
-        has_processed_main = False
-        for name, image in images.items():
-            if has_processed_main:
-                container_name = f"{container.user_id}-{uuid.uuid4()}"
-            else:
-                container_name = container.name
-                node = DockerUtils.choose_node(
-                    image, whale_config("docker_swarm_nodes").split(",")
-                )
-                has_processed_main = True
-
-            client.services.create(
-                image=image,
-                name=container_name,
-                networks=[
-                    docker.types.NetworkAttachmentConfig(network_name, aliases=[name])
-                ],
-                env={"FLAG": container.flag.content},
-                dns_config=docker.types.DNSConfig(nameservers=dns) if dns else None,
-                resources=docker.types.Resources(
-                    mem_limit=DockerUtils.convert_readable_text(
-                        container.challenge.memory_limit
-                    ),
-                    cpu_limit=int(container.challenge.cpu_limit * 1e9),
-                ),
-                init=container.challenge.init,
-                labels={LABEL: container.name},
-                hostname=name,
-                constraints=["node.labels.name==" + node],
-                endpoint_spec=docker.types.EndpointSpec(mode="dnsrr", ports={}),
-            )
-
-    @staticmethod
-    def _create_standalone_container_classic(client, container: WhaleContainer):
-        dns = [d for d in whale_config("docker_dns").split(",") if d]
-        network_name = whale_config("docker_auto_connect_network")
-
-        client.containers.run(
-            image=container.challenge.docker_image,
-            name=container.name,
-            environment={"FLAG": container.flag.content},
-            detach=True,
-            network=network_name,
-            dns=dns if dns else None,
-            mem_limit=DockerUtils.convert_readable_text(
-                container.challenge.memory_limit
-            ),
-            init=container.challenge.init,
-            privileged=container.challenge.privileged,
-            nano_cpus=int(container.challenge.cpu_limit * 1e9),
-            labels={LABEL: container.name},
-        )
-
-    @staticmethod
-    def _create_grouped_container_classic(client, container: WhaleContainer):
-        try:
-            images = json.loads(
-                container.challenge.docker_image, object_pairs_hook=OrderedDict
-            )
-        except json.JSONDecodeError:
-            raise WhaleError(
-                "Challenge Image Parse Error\nplease check the challenge image string"
-            )
-
-        network_name = container.name
-        network = DockerUtils._create_network(client, container, driver="bridge")
-
-        dns = []
-        auto_containers = whale_config("docker_auto_connect_containers").split(",")
-        for c in auto_containers:
-            if not c:
-                continue
-            try:
-                network.connect(c)
-                c_data = client.containers.get(c)
-                for net_name, details in c_data.attrs["NetworkSettings"][
-                    "Networks"
-                ].items():
-                    if net_name == network_name:
-                        dns.append(details["IPAddress"])
-            except Exception:
-                current_app.logger.warning(
-                    "[CTFd Whale] could not connect %s to network %s",
-                    c,
-                    network_name,
-                    exc_info=True,
-                )
-
-        has_processed_main = False
-        for name, image in images.items():
-            if has_processed_main:
-                cname = f"{container.user_id}-{uuid.uuid4()}"
-            else:
-                cname = container.name
-                has_processed_main = True
-
-            client.containers.run(
-                image=image,
-                name=cname,
-                environment={"FLAG": container.flag.content},
-                detach=True,
-                network=network_name,
-                hostname=name,
-                dns=dns if dns else None,
-                mem_limit=DockerUtils.convert_readable_text(
-                    container.challenge.memory_limit
-                ),
-                nano_cpus=int(container.challenge.cpu_limit * 1e9),
-                init=container.challenge.init,
-                privileged=container.challenge.privileged,
-                labels={LABEL: container.name},
-            )
 
     @staticmethod
     def remove_container(container: WhaleContainer):
@@ -464,3 +435,16 @@ class DockerUtils:
                 + 'docker node update --label-add "name=linux-1" $(docker node ls -q)'
             )
         return random.choice(candidates)
+
+    @staticmethod
+    def node_constraints(image: str, node: str) -> list:
+        """Swarm constraints: the chosen labelled node, and the matching OS.
+
+        The OS constraint guards against a node labelled for the wrong OS.
+        """
+        os_name = (
+            "windows"
+            if DockerUtils._image_tag(image).startswith("windows")
+            else "linux"
+        )
+        return [f"node.labels.name=={node}", f"node.platform.os=={os_name}"]

@@ -1,5 +1,6 @@
 import datetime
-import traceback
+
+from flask import current_app
 
 from ..models import WhaleContainer
 from .cache import try_lock
@@ -16,6 +17,7 @@ REMOVE_LOCK_SECONDS = 120
 class ControlUtil:
     @staticmethod
     def try_add_container(user_id: int, challenge_id: int, flag_id: int):
+        """Launch a container: (ok, message, HTTP status for the API)."""
         container = DBContainer.create_container_record(user_id, challenge_id, flag_id)
         # Count after inserting our own row, not before: concurrent launches
         # then all see each other, so the limit can't be exceeded (at worst
@@ -23,28 +25,33 @@ class ControlUtil:
         max_count = int(whale_config("docker_max_container_count"))
         if DBContainer.get_all_alive_container_count() > max_count:
             DBContainer.remove_container_record(container)
-            return False, "Max container count exceed."
+            return False, "Max container count exceed.", 503
         try:
             started = DockerUtils.add_container(container)
         except WhaleError as e:
-            print(traceback.format_exc())
+            current_app.logger.exception("[CTFd Whale] container creation failed")
             ControlUtil._discard_container(container)
-            return False, f"Docker Creation Error: {e.message}"
+            return False, f"Docker Creation Error: {e.message}", 500
         except Exception:
-            print(traceback.format_exc())
+            current_app.logger.exception("[CTFd Whale] container creation failed")
             ControlUtil._discard_container(container)
-            return False, "Docker Creation Error"
+            return False, "Docker Creation Error", 500
         try:
             ok, msg = get_router().register(container)
         except Exception:
-            print(traceback.format_exc())
+            current_app.logger.exception("[CTFd Whale] router registration failed")
             ok, msg = False, "Unable to register the instance, please try again later."
         if not ok:
+            # no free port, or the router is unreachable
             ControlUtil._discard_container(container)
-            return False, msg
+            return False, msg, 503
         if not started:
-            return True, "Container created, it is still starting: give it a minute."
-        return True, "Container created"
+            return (
+                True,
+                "Container created, it is still starting: give it a minute.",
+                200,
+            )
+        return True, "Container created", 200
 
     @staticmethod
     def _discard_container(container):
@@ -92,7 +99,10 @@ class ControlUtil:
             DBContainer.remove_container_record(container)
             return True, "Container destroyed"
         except Exception:
-            print(traceback.format_exc())
+            current_app.logger.exception(
+                "[CTFd Whale] removal of container %s failed, auto-clean retries it",
+                container.id,
+            )
             DBContainer.mark_removing(container)
             return True, "Your instance is being destroyed."
 

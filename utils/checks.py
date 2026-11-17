@@ -1,4 +1,5 @@
-from docker.errors import APIError, DockerException, TLSParameterError, requests
+import requests
+from docker.errors import APIError, DockerException, TLSParameterError
 
 from .config import whale_config
 from .docker import build_docker_client, docker_login
@@ -42,10 +43,5 @@ class WhaleChecks:
 
     @staticmethod
     def perform():
-        errors = []
-        for attr in dir(WhaleChecks):
-            if attr.startswith("check_"):
-                err = getattr(WhaleChecks, attr)()
-                if err:
-                    errors.append(err)
-        return errors
+        checks = (WhaleChecks.check_docker_api, WhaleChecks.check_router_connection)
+        return [error for error in (check() for check in checks) if error]

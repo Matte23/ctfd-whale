@@ -20,6 +20,9 @@ DEFAULTS = {
     "docker_ssl_client_key": "",
     "docker_auto_connect_network": "ctfd_containers",
     "docker_auto_connect_containers": "",
+    # auto-connect containers serving DNS to grouped challenges; empty: with
+    # Swarm those whose name contains "dns", without Swarm all of them
+    "docker_dns_containers": "",
     # empty: use docker's default DNS
     "docker_dns": "",
     "docker_subnet": "174.1.0.0/16",

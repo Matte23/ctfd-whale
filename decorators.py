@@ -28,7 +28,9 @@ def challenge_visible(func):
                 Challenges.type == "docker",
             ).first()
             if not challenge:
-                abort(404, "no such challenge", success=False)
+                # returned, not raised: flask-restx would append its
+                # "did you mean" help to a raised 404
+                return {"success": False, "message": "no such challenge"}, 404
         else:
             challenge = Challenges.query.filter(
                 Challenges.id == challenge_id,

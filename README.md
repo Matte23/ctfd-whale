@@ -12,6 +12,15 @@ A plugin that empowers CTFd to bring up separate environments for each user
 - flags and subdomains are generated automatically with configurable rules
 - Administrators can get a full list of running containers, with full control over them.
 
+## Requirements
+
+- CTFd 3.8.9 (the version this plugin targets).
+- The `ctfd_cheaters` CTFd plugin, installed as `CTFd/plugins/ctfd_cheaters`:
+  ctfd-whale stores each player's generated flag as a personal flag through
+  its `create_flag_if_missing()`. CTFd fails to load ctfd-whale without it.
+- Redis as CTFd's cache (`REDIS_URL` or `REDIS_HOST`) in production: it is
+  used for the per-user locks and to run auto-clean in one worker at a time.
+
 ## Installation & Usage
 
 refer to [installation guide](docs/install.md)

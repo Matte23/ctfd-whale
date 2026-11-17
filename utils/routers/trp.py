@@ -1,5 +1,4 @@
-import traceback
-
+from flask import current_app
 from requests import HTTPError, RequestException, session
 
 from ...models import WhaleContainer
@@ -55,7 +54,7 @@ class TrpRouter(BaseRouter):
         except HTTPError as e:
             return False, e.response.text
         except RequestException:
-            print(traceback.format_exc())
+            current_app.logger.exception("[CTFd Whale] trp request failed")
             return False, "unable to access trp Api"
 
     def unregister(self, container: WhaleContainer):
@@ -72,7 +71,7 @@ class TrpRouter(BaseRouter):
         except HTTPError as e:
             return False, e.response.text
         except RequestException:
-            print(traceback.format_exc())
+            current_app.logger.exception("[CTFd Whale] trp request failed")
             return False, "unable to access trp Api"
 
     def sync(self):

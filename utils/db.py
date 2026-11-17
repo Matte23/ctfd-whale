@@ -4,6 +4,7 @@ import random
 from CTFd.models import db
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
 
 from ..models import WhaleContainer, WhaleRedirectTemplate
 from .config import whale_config
@@ -119,6 +120,12 @@ class DBContainer:
     def get_alive_containers_page(page: int, per_page: int):
         """One page of unexpired containers, oldest first (Flask-SQLAlchemy Pagination)."""
         q = WhaleContainer.query.filter(WhaleContainer.start_time >= _expiry_cutoff())
+        # the list shows user, challenge and flag: load them with the page
+        q = q.options(
+            joinedload(WhaleContainer.user),
+            joinedload(WhaleContainer.challenge),
+            joinedload(WhaleContainer.flag),
+        )
         return q.order_by(WhaleContainer.id).paginate(
             page=page, per_page=per_page, error_out=False
         )
