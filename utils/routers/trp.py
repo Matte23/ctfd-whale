@@ -32,7 +32,9 @@ class TrpRouter(BaseRouter):
         domain = self.get_domain(container)
         port = whale_config("trp_listening_port")
         if ch_type == "direct":
-            return f'from pwn import *<br>remote("{domain}", {port}, ssl=True).interactive()'
+            return (
+                f'from pwn import *\nremote("{domain}", {port}, ssl=True).interactive()'
+            )
         elif ch_type == "http":
             return f"https://{domain}" + (f":{port}" if port != 443 else "")
         else:

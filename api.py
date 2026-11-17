@@ -12,7 +12,12 @@ from CTFd.utils.decorators.visibility import check_challenge_visibility
 from flask import request
 from flask_restx import Namespace, Resource, abort
 
-from .decorators import challenge_visible, frequency_limited, require_team_if_teams_mode
+from .decorators import (
+    challenge_visible,
+    current_challenge_id,
+    frequency_limited,
+    require_team_if_teams_mode,
+)
 from .utils.config import whale_config
 from .utils.control import ControlUtil
 from .utils.db import DBContainer
@@ -23,10 +28,35 @@ admin_namespace = Namespace("ctfd-whale-admin")
 user_namespace = Namespace("ctfd-whale-user")
 
 
-@admin_namespace.errorhandler
-@user_namespace.errorhandler
-def handle_default(err):
-    return {"success": False, "message": "Unexpected things happened"}, 500
+MAX_PER_PAGE = 100
+
+
+def page_args():
+    """page/per_page from the query string, clamped to valid values."""
+    page = request.args.get("page", 1, type=int) or 1
+    per_page = request.args.get("per_page", 20, type=int) or 20
+    return max(page, 1), min(max(per_page, 1), MAX_PER_PAGE)
+
+
+def serialize_container(container):
+    return {
+        "id": container.id,
+        "name": container.name,
+        "user_id": container.user_id,
+        "user_name": container.user.name if container.user else None,
+        "challenge_id": container.challenge_id,
+        "challenge_name": container.challenge.name if container.challenge else None,
+        "redirect_type": (
+            container.challenge.redirect_type if container.challenge else None
+        ),
+        "access": container.user_access,
+        "flag": container.flag.content if container.flag else None,
+        "port": container.port,
+        "subnet": container.subnet,
+        "start_time": container.start_time.isoformat(),
+        "renew_count": container.renew_count,
+        "removing": container.is_removing,
+    }
 
 
 @admin_namespace.route("/container")
@@ -34,21 +64,16 @@ class AdminContainers(Resource):
     @staticmethod
     @admins_only
     def get():
-        page = abs(request.args.get("page", 1, type=int))
-        results_per_page = abs(request.args.get("per_page", 20, type=int))
-        page_start = results_per_page * (page - 1)
-        page_end = results_per_page * (page - 1) + results_per_page
-
-        count = DBContainer.get_all_alive_container_count()
-        containers = DBContainer.get_all_alive_container_page(page_start, page_end)
-
+        page, per_page = page_args()
+        pagination = DBContainer.get_alive_containers_page(page, per_page)
         return {
             "success": True,
             "data": {
-                "containers": containers,
-                "total": count,
-                "pages": int(count / results_per_page) + (count % results_per_page > 0),
-                "page_start": page_start,
+                "containers": [serialize_container(c) for c in pagination.items],
+                "total": pagination.total,
+                "pages": pagination.pages,
+                "page": pagination.page,
+                "per_page": pagination.per_page,
             },
         }
 
@@ -89,15 +114,13 @@ class UserContainers(Resource):
     @challenge_visible
     def get():
         user_id = current_user.get_current_user().id
-        challenge_id = request.args.get("challenge_id")
+        challenge_id = current_challenge_id()
         container = DBContainer.get_current_containers(user_id=user_id)
         if not container:
             return {"success": True, "data": {}}
         timeout = int(whale_config("docker_timeout"))
         # challenge_id is NULL when the challenge was deleted meanwhile
-        if container.challenge_id is None or container.challenge_id != int(
-            challenge_id
-        ):
+        if container.challenge_id != challenge_id:
             return {"success": True, "data": {}}
         return {
             "success": True,
@@ -124,7 +147,8 @@ class UserContainers(Resource):
             result, message = ControlUtil.try_remove_container(user_id)
             if not result:
                 abort(403, message, success=False)
-        if DBContainer.has_container_being_removed(user_id):
+        # also covers a removal still running elsewhere (e.g. auto-clean)
+        if DBContainer.has_any_container(user_id):
             abort(
                 409,
                 "Your previous instance is still being destroyed, "
@@ -136,7 +160,7 @@ class UserContainers(Resource):
         if int(whale_config("docker_max_container_count")) <= int(current_count):
             abort(403, "Max container count exceed.", success=False)
 
-        challenge_id = int(request.args.get("challenge_id"))
+        challenge_id = current_challenge_id()
         flag_content = generate_flag(challenge_id)
         flag_id = create_flag_if_missing(
             user_id=user_id, challenge_id=challenge_id, flag_content=flag_content
@@ -158,12 +182,12 @@ class UserContainers(Resource):
     @frequency_limited
     def patch():
         user_id = current_user.get_current_user().id
-        challenge_id = request.args.get("challenge_id")
+        challenge_id = current_challenge_id()
         docker_max_renew_count = int(whale_config("docker_max_renew_count"))
         container = DBContainer.get_current_containers(user_id)
         if container is None:
             abort(403, "Instance not found.", success=False)
-        if container.challenge is None or container.challenge_id != int(challenge_id):
+        if container.challenge is None or container.challenge_id != challenge_id:
             other = container.challenge.name if container.challenge else "deleted"
             abort(
                 403,

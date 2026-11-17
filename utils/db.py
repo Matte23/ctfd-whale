@@ -45,12 +45,10 @@ class DBContainer:
         return q.first()
 
     @staticmethod
-    def has_container_being_removed(user_id: int):
+    def has_any_container(user_id: int):
+        """Whether any row of the user is left, running or being removed."""
         q = db.session.query(WhaleContainer.id)
-        q = q.filter(
-            WhaleContainer.user_id == user_id,
-            WhaleContainer.status == WhaleContainer.STATUS_REMOVING,
-        )
+        q = q.filter(WhaleContainer.user_id == user_id)
         return q.first() is not None
 
     @staticmethod
@@ -118,9 +116,12 @@ class DBContainer:
         return q.all()
 
     @staticmethod
-    def get_all_alive_container_page(page_start: int, page_end: int):
-        q = DBContainer._alive_query().slice(page_start, page_end)
-        return q.all()
+    def get_alive_containers_page(page: int, per_page: int):
+        """One page of unexpired containers, oldest first (Flask-SQLAlchemy Pagination)."""
+        q = WhaleContainer.query.filter(WhaleContainer.start_time >= _expiry_cutoff())
+        return q.order_by(WhaleContainer.id).paginate(
+            page=page, per_page=per_page, error_out=False
+        )
 
     @staticmethod
     def get_all_alive_container_count():

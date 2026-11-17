@@ -2,18 +2,34 @@ import datetime
 import traceback
 
 from ..models import WhaleContainer
+from .cache import try_lock
 from .config import whale_config
 from .db import DBContainer, db
 from .docker import DockerUtils
+from .exceptions import WhaleError
 from .routers import get_router
+
+# Upper bound of one removal; the lock expires after it in any case.
+REMOVE_LOCK_SECONDS = 120
 
 
 class ControlUtil:
     @staticmethod
     def try_add_container(user_id: int, challenge_id: int, flag_id: int):
         container = DBContainer.create_container_record(user_id, challenge_id, flag_id)
+        # Count after inserting our own row, not before: concurrent launches
+        # then all see each other, so the limit can't be exceeded (at worst
+        # one is refused too early). No resources exist yet, just drop the row.
+        max_count = int(whale_config("docker_max_container_count"))
+        if DBContainer.get_all_alive_container_count() > max_count:
+            DBContainer.remove_container_record(container)
+            return False, "Max container count exceed."
         try:
-            DockerUtils.add_container(container)
+            started = DockerUtils.add_container(container)
+        except WhaleError as e:
+            print(traceback.format_exc())
+            ControlUtil._discard_container(container)
+            return False, f"Docker Creation Error: {e.message}"
         except Exception:
             print(traceback.format_exc())
             ControlUtil._discard_container(container)
@@ -26,6 +42,8 @@ class ControlUtil:
         if not ok:
             ControlUtil._discard_container(container)
             return False, msg
+        if not started:
+            return True, "Container created, it is still starting: give it a minute."
         return True, "Container created"
 
     @staticmethod
@@ -52,6 +70,18 @@ class ControlUtil:
         removing and auto-clean retries on its next run, instead of the
         request retrying or waiting (e.g. for Swarm to free a network).
         """
+        # one removal per container at a time (a request and auto-clean may
+        # both try); whoever comes second leaves it to the first
+        lock = try_lock(f"remove-{container.id}", timeout=REMOVE_LOCK_SECONDS)
+        if not lock.acquire():
+            return True, "Your instance is being destroyed."
+        try:
+            return ControlUtil._remove_container(container)
+        finally:
+            lock.release()
+
+    @staticmethod
+    def _remove_container(container):
         try:
             ok, msg = get_router().unregister(container)
             if not ok:

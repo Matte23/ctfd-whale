@@ -13,6 +13,30 @@ CTFd._internal.challenge.postRender = function () {
 
 if (window.$ === undefined) window.$ = CTFd.lib.$;
 
+function escapeHtml(value) {
+    return String(value === undefined || value === null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+// The server sends access info as plain text (a URL or a command, maybe on
+// several lines): escape it, then turn lines that are URLs into links.
+function renderAccess(text) {
+    return String(text || "")
+        .split("\n")
+        .map(function (line) {
+            const escaped = escapeHtml(line);
+            if (/^https?:\/\/\S+$/.test(line)) {
+                return '<a target="_blank" rel="noopener noreferrer" href="' + escaped + '">' + escaped + "</a>";
+            }
+            return escaped;
+        })
+        .join("<br>");
+}
+
 function loadInfo() {
     var challenge_id = CTFd._internal.challenge.data.id;
     var url = "/api/v1/plugins/ctfd-whale/container?challenge_id=" + challenge_id;
@@ -42,12 +66,12 @@ function loadInfo() {
         if (response.success) response = response.data;
         else CTFd._functions.events.eventAlert({
             title: "Fail",
-            html: response.message,
+            html: escapeHtml(response.message),
             button: "OK"
         });
         if (response.remaining_time != undefined) {
-            $('#whale-challenge-user-access').html(response.user_access);
-            $('#whale-challenge-lan-domain').html(response.lan_domain);
+            $('#whale-challenge-user-access').html(renderAccess(response.user_access));
+            $('#whale-challenge-lan-domain').text(response.lan_domain);
             $('#whale-challenge-count-down').text(response.remaining_time);
             $('#whale-panel-stopped').hide();
             $('#whale-panel-started').show();
@@ -106,7 +130,7 @@ CTFd._internal.challenge.destroy = function () {
         } else {
             CTFd._functions.events.eventAlert({
                 title: "Fail",
-                html: response.message,
+                html: escapeHtml(response.message),
                 button: "OK"
             });
         }
@@ -154,7 +178,7 @@ CTFd._internal.challenge.renew = function () {
         } else {
             CTFd._functions.events.eventAlert({
                 title: "Fail",
-                html: response.message,
+                html: escapeHtml(response.message),
                 button: "OK"
             });
         }
@@ -202,7 +226,7 @@ CTFd._internal.challenge.boot = function () {
         } else {
             CTFd._functions.events.eventAlert({
                 title: "Fail",
-                html: response.message,
+                html: escapeHtml(response.message),
                 button: "OK"
             });
         }

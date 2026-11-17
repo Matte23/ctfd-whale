@@ -12,9 +12,9 @@ from CTFd.utils.decorators import admins_only
 from flask import Blueprint, render_template, request, session
 from flask_apscheduler import APScheduler
 
-from .api import AdminContainers, admin_namespace, user_namespace
+from .api import admin_namespace, page_args, user_namespace
 from .challenge_type import DockerChallenge
-from .utils.cache import job_lock
+from .utils.cache import try_lock
 from .utils.checks import WhaleChecks
 from .utils.control import ControlUtil
 from .utils.db import DBContainer
@@ -72,7 +72,8 @@ def load(app):
     @page_blueprint.route("/admin/containers")
     @admins_only
     def admin_list_containers():
-        result = AdminContainers.get()
+        page, per_page = page_args()
+        pagination = DBContainer.get_alive_containers_page(page, per_page)
         # the mode picks an included template: only accept known values, and
         # fall back to "list" so a bad value can't stick in the session
         view_mode = request.args.get("mode", session.get("view_mode"))
@@ -83,16 +84,15 @@ def load(app):
             "whale_containers.html",
             plugin_name=plugin_name,
             view_mode=view_mode,
-            containers=result["data"]["containers"],
-            pages=result["data"]["pages"],
-            curr_page=abs(request.args.get("page", 1, type=int)),
-            curr_page_start=result["data"]["page_start"],
+            containers=pagination.items,
+            pages=pagination.pages,
+            curr_page=pagination.page,
         )
 
     def auto_clean_container():
         with app.app_context():
             # every worker runs this job: the lock lets one of them do the work
-            lock = job_lock("auto-clean", timeout=AUTO_CLEAN_LOCK_SECONDS)
+            lock = try_lock("auto-clean", timeout=AUTO_CLEAN_LOCK_SECONDS)
             if not lock.acquire():
                 return
             try:

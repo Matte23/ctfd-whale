@@ -9,7 +9,8 @@ from redis.exceptions import LockError
 from .exceptions import WhaleError, WhaleWarning
 from .state import whale_state
 
-LOCK_TIMEOUT_SECONDS = 10
+# Above the longest container action (a Swarm launch waits up to 60s).
+LOCK_TIMEOUT_SECONDS = 120
 LOCK_WAIT_SECONDS = 2.0
 
 
@@ -64,11 +65,11 @@ def redis_client():
     return state["redis"]
 
 
-def job_lock(name, timeout):
-    """Non-blocking lock so a periodic job runs in one worker at a time.
+def try_lock(name, timeout):
+    """Non-blocking named lock, across workers and hosts.
 
-    Every worker (on every host) schedules the job; whoever holds the lock
-    runs it, the others skip that run.
+    Whoever gets it does the work, the others skip it: used for periodic
+    jobs scheduled in every worker and for removing a container.
     """
     client = redis_client()
     if client is None:

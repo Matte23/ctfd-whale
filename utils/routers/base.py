@@ -9,7 +9,12 @@ class BaseRouter:
     def __init__(self):
         pass
 
-    def access(self, container: WhaleContainer):
+    def access(self, container: WhaleContainer) -> str:
+        """How to reach the container, as plain text (not HTML).
+
+        A URL or a command, possibly on several lines; the frontend escapes it
+        and turns URLs into links.
+        """
         pass
 
     def register(self, container: WhaleContainer):

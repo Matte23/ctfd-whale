@@ -3,7 +3,7 @@ from datetime import datetime
 
 from CTFd.models import Challenges, db
 
-from .utils.templates import container_context, render, render_http_subdomain
+from .utils.templates import render_http_subdomain
 
 
 class WhaleConfig(db.Model):
@@ -118,25 +118,13 @@ class WhaleContainer(db.Model):
 
     @property
     def user_access(self):
+        """How to reach the container: the same text players get (plain text)."""
         if self.challenge is None:
             return ""
-        template = WhaleRedirectTemplate.query.filter_by(
-            key=self.challenge.redirect_type
-        ).first()
-        if template is None:
-            return ""
-        return render(template.access_template, container=container_context(self))
+        # imported here: the routers import this module
+        from .utils.routers import get_router
 
-    @property
-    def frp_config(self):
-        if self.challenge is None:
-            return ""
-        template = WhaleRedirectTemplate.query.filter_by(
-            key=self.challenge.redirect_type
-        ).first()
-        if template is None:
-            return ""
-        return render(template.frp_template, container=container_context(self))
+        return get_router().access(self)
 
     def __repr__(self):
         return "<WhaleContainer ID:{0} {1} {2} {3} {4}>".format(

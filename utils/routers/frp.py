@@ -1,4 +1,4 @@
-from CTFd.utils import set_config
+from flask import current_app
 from requests import RequestException, session
 
 from ...models import WhaleContainer
@@ -30,19 +30,42 @@ class FrpRouter(BaseRouter):
     def __init__(self):
         super().__init__()
         self.ses = session()
+        # [common] section fetched from frpc, when the setting has none
+        self._remote_common = None
 
     @property
     def url(self):
         return whale_config("frp_api_url").rstrip("/")
 
+    @staticmethod
+    def _extract_common(config: str) -> str:
+        """The [common] section of an frpc config, without any rule sections."""
+        lines, inside = [], False
+        for line in config.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                inside = stripped == "[common]"
+            if inside:
+                lines.append(line)
+        return "\n".join(lines)
+
     def _common_section(self):
         common = whale_config("frp_config_template")
         if "[common]" in common:
             return common
-        remote = self.ses.get(f"{self.url}/api/config", timeout=REQUEST_TIMEOUT_SECONDS)
-        remote.raise_for_status()
-        set_config("whale:frp_config_template", remote.text)
-        return remote.text
+        # No template set: reuse frpc's own [common]. Kept in memory, not
+        # written to the settings. Only the [common] section: once rules were
+        # pushed, frpc's config contains them too.
+        if self._remote_common is None:
+            remote = self.ses.get(
+                f"{self.url}/api/config", timeout=REQUEST_TIMEOUT_SECONDS
+            )
+            remote.raise_for_status()
+            common = self._extract_common(remote.text)
+            if "[common]" not in common:
+                raise WhaleError("frpc config has no [common] section")
+            self._remote_common = common
+        return self._remote_common
 
     def reload(self, exclude=None):
         rules = []
@@ -50,6 +73,14 @@ class FrpRouter(BaseRouter):
         for container in DBContainer.get_all_running_container():
             # no challenge: it was deleted, the container is waiting for cleanup
             if container.uuid == exclude or container.challenge is None:
+                continue
+            if container.challenge.redirect_type not in self.types:
+                # rejected when saving challenges; may still exist from before
+                current_app.logger.warning(
+                    "[CTFd Whale] container %s: unknown redirect type %r, not routed",
+                    container.id,
+                    container.challenge.redirect_type,
+                )
                 continue
             name = f"{container.challenge.redirect_type}_{container.user_id}_{container.uuid}"
             config = {
@@ -86,7 +117,7 @@ class FrpRouter(BaseRouter):
             host = whale_config("frp_http_domain_suffix")
             port = whale_config("frp_http_port")
             host += f":{port}" if port != 80 else ""
-            return f'<a target="_blank" href="http://{container.http_subdomain}.{host}/">Link to the Challenge</a>'
+            return f"http://{container.http_subdomain}.{host}/"
         return ""
 
     def register(self, container: WhaleContainer):

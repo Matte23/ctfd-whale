@@ -1,17 +1,30 @@
 import ipaddress
 import json
 import random
+import time
 import uuid
 from collections import OrderedDict
 
 import docker
 from docker.utils import parse_bytes
+from flask import current_app
 
 from ..models import WhaleContainer
 from .config import whale_config
 from .db import DBContainer
 from .exceptions import WhaleError
 from .state import whale_state
+
+# Label identifying the docker resources (containers, services, networks) of a
+# WhaleContainer; value: WhaleContainer.name. Resources created by older
+# versions carry LEGACY_LABEL instead: still looked for on removal.
+LABEL = "ctfd-whale.id"
+LEGACY_LABEL = "whale_id"
+
+# How long a Swarm launch waits for its tasks to run before reporting
+# "still starting" (a first pull of a big image can take longer).
+SWARM_START_TIMEOUT_SECONDS = 60
+_FAILED_TASK_STATES = ("failed", "rejected")
 
 # Settings the docker client is built from: when one changes, it is rebuilt.
 CLIENT_SETTINGS = (
@@ -85,25 +98,59 @@ def docker_client():
 
 class DockerUtils:
     @staticmethod
-    def add_container(container: WhaleContainer):
-        use_swarm = whale_config("docker_use_swarm")
+    def add_container(container: WhaleContainer) -> bool:
+        """Create the docker resources of the container.
 
-        if container.challenge.docker_image.startswith("{"):
-            if use_swarm:
-                DockerUtils._create_grouped_container_swarm(docker_client(), container)
+        Returns False when they are created but still starting (Swarm only);
+        raises WhaleError if they fail to start.
+        """
+        client = docker_client()
+        grouped = container.challenge.docker_image.startswith("{")
+        if whale_config("docker_use_swarm"):
+            if grouped:
+                DockerUtils._create_grouped_container_swarm(client, container)
             else:
-                DockerUtils._create_grouped_container_classic(
-                    docker_client(), container
-                )
+                DockerUtils._create_standalone_container_swarm(client, container)
+            # services.create() returns at once: wait for the tasks to run,
+            # so e.g. a missing image is reported instead of a dead instance
+            return DockerUtils._wait_for_services(client, container)
+        if grouped:
+            DockerUtils._create_grouped_container_classic(client, container)
         else:
-            if use_swarm:
-                DockerUtils._create_standalone_container_swarm(
-                    docker_client(), container
-                )
-            else:
-                DockerUtils._create_standalone_container_classic(
-                    docker_client(), container
-                )
+            DockerUtils._create_standalone_container_classic(client, container)
+        return True
+
+    @staticmethod
+    def _wait_for_services(client, container: WhaleContainer) -> bool:
+        """Wait until every service of the container has a running task.
+
+        Returns True when all run, False if some are still starting after
+        SWARM_START_TIMEOUT_SECONDS; raises WhaleError with Docker's error
+        when a task fails.
+        """
+        deadline = time.monotonic() + SWARM_START_TIMEOUT_SECONDS
+        while True:
+            pending = False
+            for service in client.services.list(
+                filters={"label": f"{LABEL}={container.name}"}
+            ):
+                tasks = service.tasks()
+                states = [t["Status"]["State"] for t in tasks]
+                if "running" in states:
+                    continue
+                failed = [
+                    t for t in tasks if t["Status"]["State"] in _FAILED_TASK_STATES
+                ]
+                if failed:
+                    status = failed[-1]["Status"]
+                    error = status.get("Err") or status.get("Message") or "task failed"
+                    raise WhaleError(f"Service {service.name} failed to start: {error}")
+                pending = True
+            if not pending:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(1)
 
     @staticmethod
     def _create_standalone_container_swarm(client, container: WhaleContainer):
@@ -126,7 +173,7 @@ class DockerUtils:
                 cpu_limit=int(container.challenge.cpu_limit * 1e9),
             ),
             init=container.challenge.init,
-            labels={"whale_id": container.name},
+            labels={LABEL: container.name},
             constraints=["node.labels.name==" + node],
             endpoint_spec=docker.types.EndpointSpec(mode="dnsrr", ports={}),
         )
@@ -189,7 +236,7 @@ class DockerUtils:
                     cpu_limit=int(container.challenge.cpu_limit * 1e9),
                 ),
                 init=container.challenge.init,
-                labels={"whale_id": container.name},
+                labels={LABEL: container.name},
                 hostname=name,
                 constraints=["node.labels.name==" + node],
                 endpoint_spec=docker.types.EndpointSpec(mode="dnsrr", ports={}),
@@ -213,7 +260,7 @@ class DockerUtils:
             init=container.challenge.init,
             privileged=container.challenge.privileged,
             nano_cpus=int(container.challenge.cpu_limit * 1e9),
-            labels={"whale_id": container.name},
+            labels={LABEL: container.name},
         )
 
     @staticmethod
@@ -244,7 +291,12 @@ class DockerUtils:
                     if net_name == network_name:
                         dns.append(details["IPAddress"])
             except Exception:
-                pass
+                current_app.logger.warning(
+                    "[CTFd Whale] could not connect %s to network %s",
+                    c,
+                    network_name,
+                    exc_info=True,
+                )
 
         has_processed_main = False
         for name, image in images.items():
@@ -268,29 +320,37 @@ class DockerUtils:
                 nano_cpus=int(container.challenge.cpu_limit * 1e9),
                 init=container.challenge.init,
                 privileged=container.challenge.privileged,
-                labels={"whale_id": container.name},
+                labels={LABEL: container.name},
             )
 
     @staticmethod
     def remove_container(container: WhaleContainer):
         whale_id = container.name
-        use_swarm = whale_config("docker_use_swarm")
+        client = docker_client()
+        # current and legacy label: docker can't OR label filters
+        label_filters = [f"{LABEL}={whale_id}", f"{LEGACY_LABEL}={whale_id}"]
 
-        if use_swarm:
-            for s in docker_client().services.list(
-                filters={"label": f"whale_id={whale_id}"}
-            ):
-                s.remove()
+        if whale_config("docker_use_swarm"):
+            for label in label_filters:
+                for s in client.services.list(filters={"label": label}):
+                    s.remove()
         else:
-            for c in docker_client().containers.list(
-                all=True, filters={"label": f"whale_id={whale_id}"}
-            ):
-                try:
-                    c.remove(force=True)
-                except Exception:
-                    pass
+            for label in label_filters:
+                for c in client.containers.list(all=True, filters={"label": label}):
+                    try:
+                        c.remove(force=True)
+                    except docker.errors.NotFound:
+                        pass
+                    except Exception:
+                        # the network removal below then fails ("in use") and
+                        # the whole removal is retried by auto-clean
+                        current_app.logger.warning(
+                            "[CTFd Whale] could not remove container %s",
+                            c.name,
+                            exc_info=True,
+                        )
 
-        networks = docker_client().networks.list(names=[whale_id])
+        networks = client.networks.list(names=[whale_id])
         if len(networks) > 0:
             auto_containers = whale_config("docker_auto_connect_containers").split(",")
             for network in networks:
@@ -299,8 +359,15 @@ class DockerUtils:
                         continue
                     try:
                         network.disconnect(c, force=True)
-                    except Exception:
+                    except docker.errors.NotFound:
                         pass
+                    except Exception:
+                        current_app.logger.warning(
+                            "[CTFd Whale] could not disconnect %s from network %s",
+                            c,
+                            whale_id,
+                            exc_info=True,
+                        )
                 # the subnet is freed with the container row, deleted only
                 # once this succeeded
                 DockerUtils._remove_network(network)
@@ -346,7 +413,7 @@ class DockerUtils:
             internal=True,
             ipam=ipam_config,
             attachable=True,
-            labels={"whale_id": container.name},
+            labels={LABEL: container.name},
             **kwargs,
         )
 
@@ -373,19 +440,27 @@ class DockerUtils:
         return limit
 
     @staticmethod
+    def _image_tag(image: str) -> str:
+        """The tag of an image reference ("" if none).
+
+        Only the last path segment can carry the tag: in
+        "registry:5000/team/img:windows" the ":5000" is the registry port.
+        """
+        name = image.split("@", 1)[0].rsplit("/", 1)[-1]
+        return name.split(":", 1)[1] if ":" in name else ""
+
+    @staticmethod
     def choose_node(image: str, nodes: list[str]):
-        win_nodes, linux_nodes = [], []
-        for node in nodes:
-            (win_nodes if node.startswith("windows") else linux_nodes).append(node)
-        try:
-            tag = image.split(":")[1:]
-            if len(tag) and tag[0].startswith("windows"):
-                return random.choice(win_nodes)
-            return random.choice(linux_nodes)
-        except IndexError:
+        """Pick a swarm node label for the image: windows-* for windows tags."""
+        nodes = [n.strip() for n in nodes if n.strip()]
+        windows = DockerUtils._image_tag(image).startswith("windows")
+        candidates = [n for n in nodes if n.startswith("windows") == windows]
+        if not candidates:
+            kind = "windows" if windows else "linux"
             raise WhaleError(
-                "No Suitable Nodes.\n"
-                + "If you are using Whale for the first time,\n"
-                + "Please setup swarm nodes correctly and label them with:\n"
+                f"No suitable {kind} swarm node in the Swarm Nodes setting "
+                f"({', '.join(nodes) or 'empty'}).\n"
+                + "Set it, e.g. to linux-1, and label your nodes with:\n"
                 + 'docker node update --label-add "name=linux-1" $(docker node ls -q)'
             )
+        return random.choice(candidates)

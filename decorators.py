@@ -4,7 +4,7 @@ from CTFd.cache import cache
 from CTFd.models import Challenges, Solves
 from CTFd.utils.config import is_teams_mode
 from CTFd.utils.user import get_current_team, get_current_user, is_admin
-from flask import request
+from flask import g, request
 from flask_restx import abort
 from sqlalchemy.sql import and_
 
@@ -17,7 +17,11 @@ FREQUENCY_LIMIT_SECONDS = 60
 def challenge_visible(func):
     @functools.wraps(func)
     def _challenge_visible(*args, **kwargs):
-        challenge_id = request.args.get("challenge_id")
+        challenge_id = request.args.get("challenge_id", type=int)
+        if challenge_id is None:
+            abort(400, "Missing or invalid challenge_id", success=False)
+        # parsed once here for the endpoint (see current_challenge_id)
+        g.whale_challenge_id = challenge_id
         if is_admin():
             challenge = Challenges.query.filter(
                 Challenges.id == challenge_id,
@@ -38,6 +42,11 @@ def challenge_visible(func):
         return func(*args, **kwargs)
 
     return _challenge_visible
+
+
+def current_challenge_id():
+    """The challenge_id of the request, validated by @challenge_visible."""
+    return g.whale_challenge_id
 
 
 def _prerequisites_met(challenge):
