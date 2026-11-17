@@ -27,6 +27,9 @@ from .utils.setup import setup_default_configs
 # garbage-collected, the file is closed and the fcntl lock is released.
 _scheduler_lock_file = None
 
+# Layouts of the admin instances page: templates/containers/<mode>.containers.html
+VIEW_MODES = ("list", "card")
+
 
 def load(app):
     global _scheduler_lock_file
@@ -69,11 +72,16 @@ def load(app):
     @admins_only
     def admin_list_containers():
         result = AdminContainers.get()
-        view_mode = request.args.get("mode", session.get("view_mode", "list"))
+        # the mode picks an included template: only accept known values, and
+        # fall back to "list" so a bad value can't stick in the session
+        view_mode = request.args.get("mode", session.get("view_mode"))
+        if view_mode not in VIEW_MODES:
+            view_mode = "list"
         session["view_mode"] = view_mode
         return render_template(
             "whale_containers.html",
             plugin_name=plugin_name,
+            view_mode=view_mode,
             containers=result["data"]["containers"],
             pages=result["data"]["pages"],
             curr_page=abs(request.args.get("page", 1, type=int)),

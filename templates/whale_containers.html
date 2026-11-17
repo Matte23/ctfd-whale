@@ -52,7 +52,7 @@
     </li>
     
     <li class="nav-item nav-link">
-        {% if session['view_mode'] == 'card' %}
+        {% if view_mode == 'card' %}
             <a href="?mode=list">Switch to list mode</a>
         {% else %}
             <a href="?mode=card">Switch to card mode</a>
@@ -61,7 +61,7 @@
 {% endblock %}
 
 {% block panel %}
-    {% include "containers/" + session["view_mode"] + ".containers.html" %}
+    {% include "containers/" + view_mode + ".containers.html" %}
 {% endblock %}
 
 {% block scripts %}

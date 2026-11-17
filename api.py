@@ -3,11 +3,21 @@ from datetime import datetime
 from CTFd.plugins.ctfd_cheaters import create_flag_if_missing
 from CTFd.utils import get_config
 from CTFd.utils import user as current_user
-from CTFd.utils.decorators import admins_only, authed_only
+from CTFd.utils.decorators import (
+    admins_only,
+    authed_only,
+    during_ctf_time_only,
+    require_verified_emails,
+)
+from CTFd.utils.decorators.visibility import check_challenge_visibility
 from flask import request
 from flask_restx import Namespace, Resource, abort
 
-from .decorators import challenge_visible, frequency_limited
+from .decorators import (
+    challenge_visible,
+    frequency_limited,
+    require_team_if_teams_mode,
+)
 from .utils.control import ControlUtil
 from .utils.db import DBContainer
 from .utils.flags import generate_flag
@@ -67,6 +77,7 @@ class AdminContainers(Resource):
 class UserContainers(Resource):
     @staticmethod
     @authed_only
+    @check_challenge_visibility
     @challenge_visible
     def get():
         user_id = current_user.get_current_user().id
@@ -93,6 +104,10 @@ class UserContainers(Resource):
 
     @staticmethod
     @authed_only
+    @check_challenge_visibility
+    @during_ctf_time_only
+    @require_verified_emails
+    @require_team_if_teams_mode
     @challenge_visible
     @frequency_limited
     def post():
@@ -121,6 +136,10 @@ class UserContainers(Resource):
 
     @staticmethod
     @authed_only
+    @check_challenge_visibility
+    @during_ctf_time_only
+    @require_verified_emails
+    @require_team_if_teams_mode
     @challenge_visible
     @frequency_limited
     def patch():

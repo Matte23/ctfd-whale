@@ -22,7 +22,7 @@
         {% set use_swarm = get_config('whale:docker_use_swarm') %}
         <div class="form-check">
             <input type="checkbox" id="docker-use-swarm" name="whale:docker_use_swarm"
-                   {% if docker_use_swarm == True %}checked{% endif %}>
+                   {% if use_swarm == True %}checked{% endif %}>
             <label for="docker-use-swarm">Use Swarm</label>
         </div>
         {% set use_ssl = get_config('whale:docker_use_ssl') %}

@@ -1,12 +1,17 @@
 import functools
-import time
-from flask import request, current_app, session
+
+from CTFd.cache import cache
+from CTFd.models import Challenges, Solves
+from CTFd.utils.config import is_teams_mode
+from CTFd.utils.user import get_current_team, get_current_user, is_admin
+from flask import current_app, request
 from flask_restx import abort
 from sqlalchemy.sql import and_
 
-from CTFd.models import Challenges, Solves
-from CTFd.utils.user import is_admin, get_current_user
 from .utils.cache import CacheProvider
+
+# Minimum time between two container actions (launch/renew/destroy) of a user.
+FREQUENCY_LIMIT_SECONDS = 60
 
 
 def challenge_visible(func):
@@ -55,25 +60,53 @@ def _prerequisites_met(challenge):
     return solve_ids >= prereqs
 
 
+def require_team_if_teams_mode(func):
+    """In teams mode, require the user to be in a team.
+
+    CTFd's own ``require_team`` aborts with 404 outside teams mode, so it
+    can't be used on endpoints that must work in both modes.
+    """
+
+    @functools.wraps(func)
+    def _require_team_if_teams_mode(*args, **kwargs):
+        if is_teams_mode() and not is_admin() and get_current_team() is None:
+            abort(403, 'You must join a team first.', success=False)
+        return func(*args, **kwargs)
+
+    return _require_team_if_teams_mode
+
+
 def frequency_limited(func):
     @functools.wraps(func)
     def _frequency_limited(*args, **kwargs):
         if is_admin():
             return func(*args, **kwargs)
-        redis_util = CacheProvider(app=current_app, user_id=get_current_user().id)
+
+        user_id = get_current_user().id
+        # kept in the shared cache, not in the session: a second login
+        # must not reset the limit
+        limit_key = f"whale:frequency_limit:{user_id}"
+
+        redis_util = CacheProvider(app=current_app, user_id=user_id)
         if not redis_util.acquire_lock():
-            abort(403, 'Request Too Fast!', success=False)
-            # last request was unsuccessful. this is for protection.
-
-        if "limit" not in session:
-            session["limit"] = int(time.time())
-        else:
-            if int(time.time()) - session["limit"] < 60:
-                abort(403, 'Frequency limit, You should wait at least 1 min.', success=False)
-        session["limit"] = int(time.time())
-
-        result = func(*args, **kwargs)
-        redis_util.release_lock()  # if any exception is raised, lock will not be released
+            abort(429, 'Request Too Fast!', success=False)
+        # check and record the limit while holding the lock, so two
+        # concurrent requests of the same user can't both get through
+        try:
+            if cache.get(limit_key):
+                abort(
+                    429,
+                    f'Frequency limit, you should wait at least '
+                    f'{FREQUENCY_LIMIT_SECONDS} seconds.',
+                    success=False,
+                )
+            result = func(*args, **kwargs)
+            # only successful actions count: a failed launch must not lock
+            # the user out
+            if isinstance(result, dict) and result.get("success"):
+                cache.set(limit_key, True, timeout=FREQUENCY_LIMIT_SECONDS)
+        finally:
+            redis_util.release_lock()
         return result
 
     return _frequency_limited
