@@ -124,6 +124,13 @@ class UserContainers(Resource):
             result, message = ControlUtil.try_remove_container(user_id)
             if not result:
                 abort(403, message, success=False)
+        if DBContainer.has_container_being_removed(user_id):
+            abort(
+                409,
+                "Your previous instance is still being destroyed, "
+                "please try again in a few seconds.",
+                success=False,
+            )
 
         current_count = DBContainer.get_all_alive_container_count()
         if int(whale_config("docker_max_container_count")) <= int(current_count):

@@ -1,6 +1,7 @@
 import datetime
 import traceback
 
+from ..models import WhaleContainer
 from .config import whale_config
 from .db import DBContainer, db
 from .docker import DockerUtils
@@ -32,17 +33,9 @@ class ControlUtil:
         """Clean up after a failed creation.
 
         Docker resources (network, already-started containers) may exist even
-        if creation failed partway, so remove them before the DB record, whose
-        deletion frees the port and subnet. If that fails (e.g. Docker
-        unreachable), keep the record so auto-clean retries the removal when
-        the container expires.
+        if creation failed partway: remove them like any other container.
         """
-        try:
-            DockerUtils.remove_container(container)
-        except Exception:
-            print(traceback.format_exc())
-            return
-        DBContainer.remove_container_record(container)
+        ControlUtil.remove_container(container)
 
     @staticmethod
     def try_remove_container(user_id: int):
@@ -53,19 +46,25 @@ class ControlUtil:
 
     @staticmethod
     def remove_container(container):
-        for _ in range(3):  # configurable? as "onerror_retry_cnt"
-            try:
-                ok, msg = get_router().unregister(container)
-                if not ok:
-                    return False, msg
-                DockerUtils.remove_container(container)
-                # deleting the row frees the port and subnet: only do it once
-                # the old container is really gone
-                DBContainer.remove_container_record(container)
-                return True, "Container destroyed"
-            except Exception:
-                print(traceback.format_exc())
-        return False, "Failed when destroying instance, please contact admin!"
+        """Remove the container now, or hand it over to auto-clean.
+
+        Every step can safely run again. If one fails, the row is marked as
+        removing and auto-clean retries on its next run, instead of the
+        request retrying or waiting (e.g. for Swarm to free a network).
+        """
+        try:
+            ok, msg = get_router().unregister(container)
+            if not ok:
+                raise RuntimeError(f"router unregister failed: {msg}")
+            DockerUtils.remove_container(container)
+            # deleting the row frees the port and subnet: only do it once
+            # the old container is really gone
+            DBContainer.remove_container_record(container)
+            return True, "Container destroyed"
+        except Exception:
+            print(traceback.format_exc())
+            DBContainer.mark_removing(container)
+            return True, "Your instance is being destroyed."
 
     @staticmethod
     def try_renew_container(user_id: int):
@@ -75,7 +74,9 @@ class ControlUtil:
         return ControlUtil.renew_container(container)
 
     @staticmethod
-    def renew_container(container):
+    def renew_container(container: WhaleContainer):
+        if container.is_removing:
+            return False, "This instance is being destroyed"
         timeout = int(whale_config("docker_timeout"))
         container.start_time = container.start_time + datetime.timedelta(
             seconds=timeout

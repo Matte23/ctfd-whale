@@ -96,8 +96,9 @@ def load(app):
             if not lock.acquire():
                 return
             try:
-                # per container, not per user: rows of deleted users have no user_id
-                for container in DBContainer.get_all_expired_container():
+                # per container, not per user: rows of deleted users have no
+                # user_id. Includes containers whose removal failed: retried here.
+                for container in DBContainer.get_containers_to_clean():
                     ControlUtil.remove_container(container)
             finally:
                 lock.release()

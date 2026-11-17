@@ -56,6 +56,11 @@ class DockerChallenges(Challenges):
 
 
 class WhaleContainer(db.Model):
+    # status values. REMOVING: removal failed partway, auto-clean retries it;
+    # the container no longer counts as the user's running instance.
+    STATUS_RUNNING = 1
+    STATUS_REMOVING = 2
+
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     # SET NULL, not CASCADE: deleting a user, challenge or flag must keep the
     # row, otherwise auto-clean can't find the docker resources to remove
@@ -67,7 +72,7 @@ class WhaleContainer(db.Model):
     )
     start_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     renew_count = db.Column(db.Integer, nullable=False, default=0)
-    status = db.Column(db.Integer, default=1)
+    status = db.Column(db.Integer, default=STATUS_RUNNING)
     uuid = db.Column(db.String(256))
     # docker name and whale_id label of the resources: "<user_id>-<uuid>".
     # Stored so the resources can still be found once user_id is NULL.
@@ -93,6 +98,10 @@ class WhaleContainer(db.Model):
     flag = db.relationship(
         "Flags", foreign_keys="WhaleContainer.flag_id", lazy="select"
     )
+
+    @property
+    def is_removing(self):
+        return self.status == WhaleContainer.STATUS_REMOVING
 
     @property
     def http_subdomain(self):

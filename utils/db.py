@@ -2,6 +2,7 @@ import datetime
 import random
 
 from CTFd.models import db
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 
 from ..models import WhaleContainer, WhaleRedirectTemplate
@@ -29,10 +30,41 @@ class DBContainer:
         return container
 
     @staticmethod
+    def _running():
+        # NULL: rows from versions before status was used
+        return or_(
+            WhaleContainer.status == WhaleContainer.STATUS_RUNNING,
+            WhaleContainer.status.is_(None),
+        )
+
+    @staticmethod
     def get_current_containers(user_id: int):
+        """The running container of the user (not one being removed)."""
         q = db.session.query(WhaleContainer)
-        q = q.filter(WhaleContainer.user_id == user_id)
+        q = q.filter(WhaleContainer.user_id == user_id, DBContainer._running())
         return q.first()
+
+    @staticmethod
+    def has_container_being_removed(user_id: int):
+        q = db.session.query(WhaleContainer.id)
+        q = q.filter(
+            WhaleContainer.user_id == user_id,
+            WhaleContainer.status == WhaleContainer.STATUS_REMOVING,
+        )
+        return q.first() is not None
+
+    @staticmethod
+    def mark_removing(container: WhaleContainer):
+        """Hand the removal over to auto-clean, which retries it."""
+        container_id = container.id  # read before the rollback expires it
+        db.session.rollback()  # drop whatever the failed removal left pending
+        q = db.session.query(WhaleContainer)
+        q = q.filter(WhaleContainer.id == container_id)
+        q.update(
+            {WhaleContainer.status: WhaleContainer.STATUS_REMOVING},
+            synchronize_session=False,
+        )
+        db.session.commit()
 
     @staticmethod
     def get_container_by_id(container_id: int):
@@ -54,9 +86,15 @@ class DBContainer:
         db.session.commit()
 
     @staticmethod
-    def get_all_expired_container():
+    def get_containers_to_clean():
+        """Expired containers, and those whose removal must be retried."""
         q = db.session.query(WhaleContainer)
-        q = q.filter(WhaleContainer.start_time < _expiry_cutoff())
+        q = q.filter(
+            or_(
+                WhaleContainer.start_time < _expiry_cutoff(),
+                WhaleContainer.status == WhaleContainer.STATUS_REMOVING,
+            )
+        )
         return q.all()
 
     @staticmethod
@@ -66,7 +104,13 @@ class DBContainer:
 
     @staticmethod
     def get_all_alive_container():
+        """Unexpired containers, including those being removed."""
         return DBContainer._alive_query().all()
+
+    @staticmethod
+    def get_all_running_container():
+        """Unexpired containers that are not being removed: the routed ones."""
+        return DBContainer._alive_query().filter(DBContainer._running()).all()
 
     @staticmethod
     def get_all_container():

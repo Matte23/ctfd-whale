@@ -46,7 +46,8 @@ class FrpRouter(BaseRouter):
 
     def reload(self, exclude=None):
         rules = []
-        for container in DBContainer.get_all_alive_container():
+        # containers being removed lose their route right away
+        for container in DBContainer.get_all_running_container():
             # no challenge: it was deleted, the container is waiting for cleanup
             if container.uuid == exclude or container.challenge is None:
                 continue

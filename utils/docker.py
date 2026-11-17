@@ -1,7 +1,6 @@
 import ipaddress
 import json
 import random
-import time
 import uuid
 from collections import OrderedDict
 
@@ -304,7 +303,7 @@ class DockerUtils:
                         pass
                 # the subnet is freed with the container row, deleted only
                 # once this succeeded
-                DockerUtils._remove_network(network, attempts=10 if use_swarm else 1)
+                DockerUtils._remove_network(network)
 
     @staticmethod
     def _used_subnets(client):
@@ -352,19 +351,15 @@ class DockerUtils:
         )
 
     @staticmethod
-    def _remove_network(network, attempts: int):
-        # Swarm removes services asynchronously: the network stays "in use"
-        # until their tasks have stopped, so give it a few seconds.
-        for attempt in range(attempts):
-            try:
-                network.remove()
-                return
-            except docker.errors.NotFound:
-                return
-            except docker.errors.APIError:
-                if attempt == attempts - 1:
-                    raise
-                time.sleep(1)
+    def _remove_network(network):
+        # Swarm removes services asynchronously: right after removing them the
+        # network can still be "in use". Then this raises, the container is
+        # marked as removing and auto-clean retries shortly, instead of the
+        # request waiting for it.
+        try:
+            network.remove()
+        except docker.errors.NotFound:
+            pass
 
     @staticmethod
     def convert_readable_text(text: str):

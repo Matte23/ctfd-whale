@@ -62,6 +62,9 @@ class TrpRouter(BaseRouter):
                 f"{self.url}/rule/{self.get_domain(container)}",
                 timeout=REQUEST_TIMEOUT_SECONDS,
             )
+            # already gone: fine, removals may be retried
+            if resp.status_code == 404:
+                return True, "success"
             resp.raise_for_status()
             return True, "success"
         except HTTPError as e:
@@ -72,7 +75,7 @@ class TrpRouter(BaseRouter):
 
     def sync(self):
         # trp may have restarted and lost its rules: register them again
-        for container in DBContainer.get_all_alive_container():
+        for container in DBContainer.get_all_running_container():
             if container.challenge is not None:
                 self.register(container)
 
