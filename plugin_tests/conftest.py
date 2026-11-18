@@ -143,6 +143,14 @@ class FakeDocker:
 
 @pytest.fixture
 def app(monkeypatch):
+    # a copy installed in CTFd/plugins (e.g. for a local stack) would be
+    # loaded twice: only this checkout's, below
+    plugin_names = CTFd.plugins.get_plugin_names
+    monkeypatch.setattr(
+        CTFd.plugins,
+        "get_plugin_names",
+        lambda: [n for n in plugin_names() if n != PLUGIN_MODULE.split(".")[-1]],
+    )
     app = create_ctfd(setup=False, enable_plugins=True)
     with app.app_context():
         whale = _import_plugin()
