@@ -18,10 +18,8 @@ from .exceptions import WhaleError
 from .state import whale_state
 
 # Label identifying the docker resources (containers, services, networks) of a
-# WhaleContainer; value: WhaleContainer.name. Resources created by older
-# versions carry LEGACY_LABEL instead: still looked for on removal.
+# WhaleContainer; value: WhaleContainer.name.
 LABEL = "ctfd-whale.id"
-LEGACY_LABEL = "whale_id"
 
 # How long a Swarm launch waits for its tasks to run before reporting
 # "still starting" (a first pull of a big image can take longer).
@@ -299,28 +297,25 @@ def _wait_for_services(client, container: WhaleContainer) -> bool:
 def remove_container(container: WhaleContainer):
     whale_id = container.name
     client = docker_client()
-    # current and legacy label: docker can't OR label filters
-    label_filters = [f"{LABEL}={whale_id}", f"{LEGACY_LABEL}={whale_id}"]
+    label = f"{LABEL}={whale_id}"
 
     if whale_config("docker_use_swarm"):
-        for label in label_filters:
-            for s in client.services.list(filters={"label": label}):
-                s.remove()
+        for s in client.services.list(filters={"label": label}):
+            s.remove()
     else:
-        for label in label_filters:
-            for c in client.containers.list(all=True, filters={"label": label}):
-                try:
-                    c.remove(force=True)
-                except docker.errors.NotFound:
-                    pass
-                except Exception:
-                    # the network removal below then fails ("in use") and
-                    # the whole removal is retried by auto-clean
-                    current_app.logger.warning(
-                        "[CTFd Whale] could not remove container %s",
-                        c.name,
-                        exc_info=True,
-                    )
+        for c in client.containers.list(all=True, filters={"label": label}):
+            try:
+                c.remove(force=True)
+            except docker.errors.NotFound:
+                pass
+            except Exception:
+                # the network removal below then fails ("in use") and the
+                # whole removal is retried by auto-clean
+                current_app.logger.warning(
+                    "[CTFd Whale] could not remove container %s",
+                    c.name,
+                    exc_info=True,
+                )
 
     networks = client.networks.list(names=[whale_id])
     if len(networks) > 0:
@@ -359,8 +354,8 @@ def _used_subnets(client):
 
 
 def _create_network(client, container: WhaleContainer, **kwargs):
-    # Overlapping networks are skipped, not only exact matches: this also
-    # covers networks created before subnets were stored in the database.
+    # Skip every subnet overlapping an existing docker network, ours or not
+    # (e.g. compose networks), not only those of other instances.
     used = _used_subnets(client)
     candidates = [
         str(subnet)
