@@ -17,6 +17,7 @@ from .decorators import (
     current_challenge_id,
     frequency_limited,
     require_team_if_teams_mode,
+    user_serialized,
 )
 from .utils import checks, control
 from .utils import db as container_db
@@ -213,7 +214,7 @@ class UserContainers(Resource):
         return {"success": result, "message": message}
 
     @authed_only
-    @frequency_limited
+    @user_serialized
     def delete(self):
         user_id = current_user.get_current_user().id
         result, message = control.remove_user_container(user_id)

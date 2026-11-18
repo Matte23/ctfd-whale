@@ -9,9 +9,7 @@ from flask_restx import abort
 from sqlalchemy.sql import and_
 
 from .utils.cache import user_lock
-
-# Minimum time between two container actions (launch/renew/destroy) of a user.
-FREQUENCY_LIMIT_SECONDS = 60
+from .utils.config import whale_config
 
 
 def challenge_visible(func):
@@ -87,9 +85,16 @@ def require_team_if_teams_mode(func):
     return _require_team_if_teams_mode
 
 
-def frequency_limited(func):
+def _user_action(func, limited):
+    """Serialize the container actions of a user; optionally rate limit them.
+
+    With ``limited``, a successful action starts a cooldown of
+    ``docker_frequency_limit`` seconds (0: none) during which the user's
+    limited actions get a 429.
+    """
+
     @functools.wraps(func)
-    def _frequency_limited(*args, **kwargs):
+    def _action(*args, **kwargs):
         if is_admin():
             return func(*args, **kwargs)
 
@@ -97,6 +102,7 @@ def frequency_limited(func):
         # kept in the shared cache, not in the session: a second login
         # must not reset the limit
         limit_key = f"whale:frequency_limit:{user_id}"
+        seconds = int(whale_config("docker_frequency_limit")) if limited else 0
 
         lock = user_lock(user_id)
         if not lock.acquire():
@@ -104,20 +110,29 @@ def frequency_limited(func):
         # check and record the limit while holding the lock, so two
         # concurrent requests of the same user can't both get through
         try:
-            if cache.get(limit_key):
+            if seconds > 0 and cache.get(limit_key):
                 abort(
                     429,
-                    f"Frequency limit, you should wait at least "
-                    f"{FREQUENCY_LIMIT_SECONDS} seconds.",
+                    f"Frequency limit, you should wait at least {seconds} seconds.",
                     success=False,
                 )
             result = func(*args, **kwargs)
             # only successful actions count: a failed launch must not lock
-            # the user out
-            if isinstance(result, dict) and result.get("success"):
-                cache.set(limit_key, True, timeout=FREQUENCY_LIMIT_SECONDS)
+            # the user out. Never with 0: the cache keeps it forever
+            if seconds > 0 and isinstance(result, dict) and result.get("success"):
+                cache.set(limit_key, True, timeout=seconds)
         finally:
             lock.release()
         return result
 
-    return _frequency_limited
+    return _action
+
+
+def frequency_limited(func):
+    """Launch and renew: serialized and rate limited."""
+    return _user_action(func, limited=True)
+
+
+def user_serialized(func):
+    """Destroy: serialized with the user's other actions, never limited."""
+    return _user_action(func, limited=False)

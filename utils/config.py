@@ -31,6 +31,8 @@ DEFAULTS = {
     "docker_max_container_count": 100,
     "docker_max_renew_count": 5,
     "docker_timeout": 3600,
+    # seconds between two launches/renewals of a player; 0: no limit
+    "docker_frequency_limit": 60,
     # router
     "router_type": "frp",
     # frpc admin API (webServer in frpc.toml). It is reachable from the

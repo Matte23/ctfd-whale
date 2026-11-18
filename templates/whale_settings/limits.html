@@ -3,6 +3,7 @@
     {{ text_field("docker_max_container_count", "Max Container Count", "The maximum number of containers allowed on the server") }}
     {{ text_field("docker_max_renew_count", "Max Renewal Times", "The maximum times a user is allowed to renew a container") }}
     {{ text_field("docker_timeout", "Docker Container Timeout", "A container times out after [timeout] seconds.") }}
+    {{ text_field("docker_frequency_limit", "Frequency Limit", "Seconds a player must wait between two launches or renewals. 0 disables it.") }}
 
     {{ submit_button() }}
 </form>

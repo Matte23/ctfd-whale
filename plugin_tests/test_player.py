@@ -95,17 +95,37 @@ def test_no_launch_before_the_ctf_starts(app):
 
 
 def test_frequency_limit(app, fake_docker):
-    """P0-6: one action per minute, failures don't count, 429 when limited."""
+    """P0-6: launch/renew rate limited, failures don't count, 429 when limited."""
     challenge_id = create_docker_challenge(app)
     with player(app) as client:
         fake_docker.fail_add = "No such image"
         r = client.post(container_url(challenge_id), json={})
         assert r.status_code == 500
         assert "No such image" in r.get_json()["message"]
-        # the failed launch doesn't start the 60s limit
+        # the failed launch doesn't start the limit
         fake_docker.fail_add = None
         assert client.post(container_url(challenge_id), json={}).status_code == 200
-        assert client.delete(container_url(), json={}).status_code == 429
+        assert client.patch(container_url(challenge_id), json={}).status_code == 429
+        # destroying is never limited, nor starts the limit
+        assert client.delete(container_url(), json={}).status_code == 200
+        r = client.post(container_url(challenge_id), json={})
+        assert r.status_code == 429
+        assert "60 seconds" in r.get_json()["message"]
+
+
+def test_frequency_limit_setting(app):
+    challenge_id = create_docker_challenge(app)
+    set_whale_config(app, docker_frequency_limit="0")
+    with player(app, "alice") as client:
+        for _ in range(2):
+            assert client.post(container_url(challenge_id), json={}).status_code == 200
+            assert client.delete(container_url(), json={}).status_code == 200
+    set_whale_config(app, docker_frequency_limit="5")
+    with player(app, "bob") as client:
+        assert client.post(container_url(challenge_id), json={}).status_code == 200
+        r = client.patch(container_url(challenge_id), json={})
+        assert r.status_code == 429
+        assert "5 seconds" in r.get_json()["message"]
 
 
 def test_container_limit(app):
