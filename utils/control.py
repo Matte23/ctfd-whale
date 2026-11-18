@@ -82,7 +82,7 @@ def remove_container(container):
     # both try); whoever comes second leaves it to the first
     lock = try_lock(f"remove-{container.id}", timeout=REMOVE_LOCK_SECONDS)
     if not lock.acquire():
-        return True, "Your instance is being destroyed."
+        return True, "Instance is being destroyed"
     try:
         return _remove(container)
     finally:
@@ -117,11 +117,11 @@ def _remove(container):
             container.id,
         )
         container_db.mark_removing(container)
-        return True, "Your instance is being destroyed."
+        return True, "Instance is being destroyed"
     # deleting the row frees the port and subnet: only do it once the old
     # container is really gone
     container_db.delete_container(container)
-    return True, "Container destroyed"
+    return True, "Instance destroyed"
 
 
 def renew_user_container(user_id: int):

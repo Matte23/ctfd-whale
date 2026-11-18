@@ -41,7 +41,7 @@ def test_launch_info_renew_destroy(app, fake_docker):
         assert client.patch(container_url(challenge_id), json={}).get_json()["success"]
         clear_frequency_limit(app)
         r = client.delete(container_url(), json={})
-        assert r.get_json()["message"] == "Container destroyed"
+        assert r.get_json()["message"] == "Instance destroyed"
     assert fake_docker.running == set()
     assert _containers(app) == []
 
@@ -152,7 +152,7 @@ def test_failed_removal_is_retried_by_auto_clean(app, fake_docker):
         r = client.delete(container_url(), json={})
         assert r.get_json() == {
             "success": True,
-            "message": "Your instance is being destroyed.",
+            "message": "Instance is being destroyed",
         }
         [container] = _containers(app)
         assert container.is_removing

@@ -45,7 +45,7 @@
                     <p class="card-text">{{ container.flag.content if container.flag else "" }}</p>
                     Time Started: <span data-time="{{ container.start_time | isoformat }}"></span>
                     {% if container.is_removing %}
-                        <span class="badge badge-warning" title="Removal failed once, auto-clean is retrying it">removing</span>
+                        <span class="badge badge-warning" title="Removal failed, retrying">removing</span>
                     {% endif %}
                     <a class="delete-container float-right" container-id="{{ container.id }}"
                        data-toggle="tooltip" data-placement="top"

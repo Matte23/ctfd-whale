@@ -5,7 +5,7 @@
     <div class="form-group">
         <label for="{{ key | replace('_', '-') }}">
             {{ label }}
-            <small class="form-text text-muted">{{ help }}</small>
+            {% if help %}<small class="form-text text-muted">{{ help }}</small>{% endif %}
         </label>
         <input type="{{ type }}" class="form-control" autocomplete="off"
                id="{{ key | replace('_', '-') }}" name="whale:{{ key }}"

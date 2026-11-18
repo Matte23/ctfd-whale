@@ -74,7 +74,7 @@ def test_destroy_while_frpc_is_down_is_retried(app, fake_docker, fake_frpc):
         fake_frpc.down = True
         clear_frequency_limit(app)
         r = client.delete(container_url(), json={})
-        assert r.get_json()["message"] == "Your instance is being destroyed."
+        assert r.get_json()["message"] == "Instance is being destroyed"
     assert _container(app).is_removing
     fake_frpc.down = False
     with app.app_context():

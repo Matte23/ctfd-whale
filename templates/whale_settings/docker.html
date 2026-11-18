@@ -29,7 +29,7 @@
         Designed for multi-container challenges
     </small><br>
     {{ text_field("docker_auto_connect_containers", "Auto Connect Containers", "Decide which container will be connected to multi-container-network automatically. Separated by commas.") }}
-    {{ text_field("docker_dns_containers", "DNS Containers", "Which of the auto connect containers serve DNS to the challenge containers. Separated by commas. Empty: with Swarm, those whose name contains 'dns'; without Swarm, all of them.") }}
+    {{ text_field("docker_dns_containers", "DNS Containers", "Auto connect containers serving DNS to challenges. Comma-separated. Default: those named *dns* (Swarm) or all of them.") }}
     {{ text_field("docker_subnet", "Multi-Container Network Subnet", "Subnet which will be used by auto created networks for multi-container challenges.") }}
     {{ text_field("docker_subnet_new_prefix", "Multi-Container Network Subnet New Prefix", "Prefix for auto created network.") }}
 
