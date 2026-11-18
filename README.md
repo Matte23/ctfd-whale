@@ -18,6 +18,9 @@ A plugin that empowers CTFd to bring up separate environments for each user
 - The `ctfd_cheaters` CTFd plugin, installed as `CTFd/plugins/ctfd_cheaters`:
   ctfd-whale stores each player's generated flag as a personal flag through
   its `create_flag_if_missing()`. CTFd fails to load ctfd-whale without it.
+- The official frp (`fatedier/frps`, `fatedier/frpc`), v0.72.0 or later, with
+  the store enabled in frpc.toml: see [the installation guide](docs/install.md)
+  and the example configs in `docs/frp/`.
 - Redis as CTFd's cache (`REDIS_URL` or `REDIS_HOST`) in production: it is
   used for the per-user locks and to run auto-clean in one worker at a time.
 

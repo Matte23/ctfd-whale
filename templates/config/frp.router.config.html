@@ -1,37 +1,49 @@
 {% from "config/macros.html" import text_field with context %}
-{{ text_field("frp_api_url", "API URL", "Frp API to connect to") }}
-{{ text_field("frp_http_domain_suffix", "Http Domain Suffix", "Will be appended to the hash of a container") }}
-{{ text_field("frp_http_port", "External Http Port", "Keep in sync with frps:vhost_http_port") }}
+<small class="form-text text-muted mb-3">
+    Needs the official frp (fatedier/frps and fatedier/frpc), v0.72.0 or later,
+    with the store enabled in frpc.toml. Each instance gets its own proxy,
+    named whale-&lt;container&gt;, managed through frpc's store API.
+</small>
+{{ text_field("frp_api_url", "API URL", "frpc admin API (webServer in frpc.toml), e.g. http://frpc:7400") }}
+{{ text_field("frp_api_user", "API User", "webServer.user in frpc.toml") }}
+{{ text_field("frp_api_password", "API Password", "webServer.password in frpc.toml. Required: challenge containers share a network with frpc, so use a strong password.", type="password") }}
+{{ text_field("frp_http_domain_suffix", "Http Domain Suffix", "Will be appended to the subdomain of a container (subDomainHost in frps.toml)") }}
+{{ text_field("frp_http_port", "External Http Port", "Keep in sync with vhostHTTPPort in frps.toml") }}
 {{ text_field("frp_direct_ip_address", "Direct IP Address", "For direct redirect") }}
-{{ text_field("frp_direct_port_minimum", "Direct Minimum Port", "For direct redirect (pwn challenges)") }}
-{{ text_field("frp_direct_port_maximum", "Direct Maximum Port", "For direct redirect (pwn challenges)") }}
-{% set frpc_template = get_config("whale:frp_config_template", "") %}
+{{ text_field("frp_direct_port_minimum", "Direct Minimum Port", "For direct redirect (pwn challenges); frps must expose this range") }}
+{{ text_field("frp_direct_port_maximum", "Direct Maximum Port", "For direct redirect (pwn challenges); frps must expose this range") }}
+
+{% set http_port = get_config("whale:frp_http_port") %}
+{% set suffix = (get_config("whale:frp_http_domain_suffix") or "127.0.0.1.nip.io").lstrip(".") %}
+{% set api_port = (get_config("whale:frp_api_url") or "").rstrip("/").rsplit(":", 1)[-1] %}
 <div class="form-group">
-    <label for="frp-config-template">
-        Frpc config template
+    <label for="frps-config-example">
+        frps.toml [example, generated from these settings]
+        <small class="form-text text-muted">Use the same auth.token in frps.toml and frpc.toml.</small>
+    </label>
+    <textarea class="form-control text-monospace" id="frps-config-example" rows="5" readonly>bindPort = 7000
+vhostHTTPPort = {{ http_port }}
+subDomainHost = "{{ suffix }}"
+auth.token = "change-me"
+</textarea>
+</div>
+<div class="form-group">
+    <label for="frpc-config-example">
+        frpc.toml [example, generated from these settings]
         <small class="form-text text-muted">
-            Frp config template, only need common section!
+            The store keeps the proxies across frpc restarts: put its path on a volume.
         </small>
     </label>
-    <textarea class="form-control input-filled-valid" id="frp-config-template" rows="7"
-              name="whale:frp_config_template">{{ frpc_template }}</textarea>
+    <textarea class="form-control text-monospace" id="frpc-config-example" rows="11" readonly>serverAddr = "frps"
+serverPort = 7000
+auth.token = "change-me"
+
+webServer.addr = "0.0.0.0"
+webServer.port = {{ api_port if api_port.isdigit() else 7400 }}
+webServer.user = "{{ get_config('whale:frp_api_user') or 'admin' }}"
+webServer.password = "&lt;the API Password above&gt;"
+
+[store]
+path = "/var/lib/frpc/store.json"
+</textarea>
 </div>
-{% if frpc_template %}
-    <div class="form-group">
-        <label for="frps-config-template">
-            Frps config template [generated]
-            <small class="form-text text-muted">
-                This configuration is generated with your settings above.
-            </small>
-        </label>
-        <textarea class="form-control input-filled-valid grey-text" id="frps-config-template" rows="6" disabled>
-[common]
-            {% for i in frpc_template.split('\n') %}
-                {%- if 'token' in i -%}{{ i }}{%- endif -%}
-                {%- if 'server_port' in i -%}{{ i.replace('server_port', 'bind_port') }}{%- endif -%}
-            {% endfor %}
-            vhost_http_port = {{ get_config('whale:frp_http_port') }}
-subdomain_host = {{ get_config('whale:frp_http_domain_suffix', '127.0.0.1.nip.io').lstrip('.') }}
-    </textarea>
-    </div>
-{% endif %}

@@ -1,5 +1,9 @@
 # Advanced deployment
 
+> **Note:** the frp parts of this guide predate the move to the official frp
+> images and TOML configs. For frp, follow [the installation guide](install.md)
+> and the example configs in `docs/frp/`; the rest still applies.
+
 ## Note
 
 Please make sure that you have experienced the installation process on single node. This deployment method is *NOT* recommended on first try.

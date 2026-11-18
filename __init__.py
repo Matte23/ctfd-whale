@@ -96,6 +96,13 @@ def load(app):
                 # user_id. Includes containers whose removal failed: retried here.
                 for container in container_db.get_containers_to_clean():
                     control.remove_container(container)
+                # e.g. re-create routes lost when the router backend restarted
+                router = get_router()
+                if router.periodic_sync:
+                    try:
+                        router.sync()
+                    except Exception:
+                        app.logger.exception("[CTFd Whale] router sync failed")
             finally:
                 lock.release()
 

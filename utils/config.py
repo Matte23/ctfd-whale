@@ -33,8 +33,11 @@ DEFAULTS = {
     "docker_timeout": 3600,
     # router
     "router_type": "frp",
+    # frpc admin API (webServer in frpc.toml). It is reachable from the
+    # challenge containers' network: always set a strong password.
     "frp_api_url": "http://frpc:7400",
-    "frp_config_template": "",
+    "frp_api_user": "admin",
+    "frp_api_password": "",
     "frp_http_port": 8080,
     "frp_http_domain_suffix": "127.0.0.1.nip.io",
     "frp_direct_ip_address": "127.0.0.1",

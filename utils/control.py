@@ -90,22 +90,38 @@ def remove_container(container):
 
 
 def _remove(container):
+    # Every step runs even if an earlier one failed (e.g. the router is down:
+    # the docker resources still go away now). Failed steps are retried by
+    # auto-clean; all of them can safely run again.
+    failed = False
     try:
         ok, msg = get_router().unregister(container)
         if not ok:
             raise RuntimeError(f"router unregister failed: {msg}")
-        docker_utils.remove_container(container)
-        # deleting the row frees the port and subnet: only do it once
-        # the old container is really gone
-        container_db.delete_container(container)
-        return True, "Container destroyed"
     except Exception:
+        failed = True
         current_app.logger.exception(
-            "[CTFd Whale] removal of container %s failed, auto-clean retries it",
+            "[CTFd Whale] container %s: removing the route failed", container.id
+        )
+    try:
+        docker_utils.remove_container(container)
+    except Exception:
+        failed = True
+        current_app.logger.exception(
+            "[CTFd Whale] container %s: removing docker resources failed",
+            container.id,
+        )
+    if failed:
+        current_app.logger.warning(
+            "[CTFd Whale] container %s marked as removing, auto-clean retries it",
             container.id,
         )
         container_db.mark_removing(container)
         return True, "Your instance is being destroyed."
+    # deleting the row frees the port and subnet: only do it once the old
+    # container is really gone
+    container_db.delete_container(container)
+    return True, "Container destroyed"
 
 
 def renew_user_container(user_id: int):

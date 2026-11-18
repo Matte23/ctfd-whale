@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import requests
 
 REPO = Path(__file__).resolve().parent.parent
 CTFD_PATH = Path(os.environ.get("CTFD_PATH", REPO.parent / "CTFd")).resolve()
@@ -68,6 +69,58 @@ class FakeScheduler:
         FakeScheduler.jobs[id] = func
 
 
+class FakeResponse:
+    def __init__(self, status_code, body=None):
+        self.status_code = status_code
+        self._body = body
+
+    @property
+    def ok(self):
+        return self.status_code < 400
+
+    def json(self):
+        return self._body
+
+    def raise_for_status(self):
+        if not self.ok:
+            raise requests.HTTPError(f"HTTP {self.status_code}", response=self)
+
+
+class FakeFrpc:
+    """frpc's admin API, store part (v0.72.0 status codes), in memory."""
+
+    STORE = "/api/store/proxies"
+
+    def __init__(self):
+        self.proxies = {}
+        self.down = False
+
+    def request(self, method, path, json=None, **kwargs):
+        if self.down:
+            raise requests.ConnectionError("frpc unreachable")
+        if path == "/api/status":
+            return FakeResponse(200, {})
+        if path == self.STORE:
+            if method == "GET":
+                return FakeResponse(200, {"proxies": list(self.proxies.values())})
+            if method == "POST":
+                if json["name"] in self.proxies:
+                    return FakeResponse(409)
+                self.proxies[json["name"]] = json
+                return FakeResponse(200, json)
+        if path.startswith(self.STORE + "/"):
+            name = path[len(self.STORE) + 1 :]
+            if name not in self.proxies:
+                return FakeResponse(404)
+            if method == "PUT":
+                self.proxies[name] = json
+                return FakeResponse(200, json)
+            if method == "DELETE":
+                del self.proxies[name]
+                return FakeResponse(200)
+        return FakeResponse(404)
+
+
 class FakeDocker:
     """Replaces docker_utils.add_container/remove_container."""
 
@@ -100,20 +153,25 @@ def app(monkeypatch):
         # the real code, for tests that drive it with a recording fake client
         originals = {
             "add_container": docker_utils.add_container,
-            "frp_reload": FrpRouter.reload,
+            "frp_request": FrpRouter._request,
         }
         monkeypatch.setattr(docker_utils, "add_container", fake.add_container)
         monkeypatch.setattr(docker_utils, "remove_container", fake.remove_container)
         # load() builds a docker client once: never reach a real daemon
         monkeypatch.setattr(whale, "docker_client", lambda: None)
         monkeypatch.setattr(whale, "APScheduler", FakeScheduler)
-        # the real frp router, minus the frpc HTTP calls
-        monkeypatch.setattr(FrpRouter, "check_availability", lambda self: (True, "ok"))
-        monkeypatch.setattr(FrpRouter, "reload", lambda self, exclude=None: None)
+        # the real frp router, talking to an in-memory frpc store API
+        frpc = FakeFrpc()
+        monkeypatch.setattr(
+            FrpRouter,
+            "_request",
+            lambda self, method, path, **kw: frpc.request(method, path, **kw),
+        )
 
         whale.load(app)
     app = setup_ctfd(app)
     app.fake_docker = fake
+    app.fake_frpc = frpc
     app.originals = originals
     yield app
     destroy_ctfd(app)
@@ -122,6 +180,11 @@ def app(monkeypatch):
 @pytest.fixture
 def fake_docker(app):
     return app.fake_docker
+
+
+@pytest.fixture
+def fake_frpc(app):
+    return app.fake_frpc
 
 
 def run_auto_clean():

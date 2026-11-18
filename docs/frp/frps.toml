@@ -1,0 +1,16 @@
+# frps for ctfd-whale (official frp, v0.72.0 or later).
+# Copy to conf/frp/frps.toml next to docker-compose.yml and change the token.
+
+bindPort = 7000
+
+# HTTP challenges: <subdomain>.<subDomainHost>:<vhostHTTPPort>
+# Keep in sync with the plugin's "Http Domain Suffix" and "External Http Port".
+vhostHTTPPort = 8080
+subDomainHost = "127.0.0.1.nip.io"
+
+# Same token as in frpc.toml
+auth.token = "change-me"
+
+# Direct (TCP) challenges get a port from the plugin's direct port range:
+# only allow that range.
+allowPorts = [{ start = 10000, end = 10100 }]

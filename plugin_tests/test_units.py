@@ -32,10 +32,10 @@ def test_sandbox_blocks_escapes(app, template):
 
 def test_get_config_allowlist(app):
     templates = plugin("utils.templates")
-    set_whale_config(app, frp_config_template="[common]\ntoken = SECRET")
+    set_whale_config(app, frp_api_password="SECRET")
     with app.app_context():
         assert templates.render('{{ get_config("whale:frp_http_port") }}') == "8080"
-        secret = '{{ get_config("whale:frp_config_template", "hidden") }}'
+        secret = '{{ get_config("whale:frp_api_password", "hidden") }}'
         assert templates.render(secret) == "hidden"
 
 
@@ -163,10 +163,28 @@ def test_swarm_wait(app, monkeypatch):
         wait(client("rejected", err="No such image: bad:1"), container)
 
 
-# --- frp (P1-17) ----------------------------------------------------------------
+# --- frp store router (P3-10) --------------------------------------------------
 
 
-def test_frp_keeps_only_the_common_section(app):
+def test_frp_definition_matches_the_store_schema(app):
     FrpRouter = plugin("utils.routers.frp").FrpRouter
-    config = "[common]\nserver_addr = frps\n\n[http_1_abc]\ntype = http\n"
-    assert FrpRouter._extract_common(config) == "[common]\nserver_addr = frps\n"
+    challenge = types.SimpleNamespace(redirect_type="direct", redirect_port=1337)
+    container = types.SimpleNamespace(name="5-abc", port=10001, challenge=challenge)
+    assert FrpRouter().definition(container) == {
+        "name": "whale-5-abc",
+        "type": "tcp",
+        "tcp": {
+            "localIP": "5-abc",
+            "localPort": 1337,
+            "remotePort": 10001,
+            "transport": {"useCompression": True},
+        },
+    }
+
+
+def test_frp_matches_ignores_fields_frpc_adds(app):
+    FrpRouter = plugin("utils.routers.frp").FrpRouter
+    wanted = {"name": "whale-x", "type": "http", "http": {"localPort": 80}}
+    stored = {"name": "whale-x", "type": "http", "http": {"localPort": 80, "extra": 1}}
+    assert FrpRouter._matches(stored, wanted)
+    assert not FrpRouter._matches({**stored, "http": {"localPort": 81}}, wanted)

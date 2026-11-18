@@ -1,13 +1,13 @@
 {# Form fields of the settings page; every field is the setting "whale:<key>". #}
 
-{% macro text_field(key, label, help) %}
+{% macro text_field(key, label, help, type="text") %}
     {% set value = get_config('whale:' + key) %}
     <div class="form-group">
         <label for="{{ key | replace('_', '-') }}">
             {{ label }}
             <small class="form-text text-muted">{{ help }}</small>
         </label>
-        <input type="text" class="form-control"
+        <input type="{{ type }}" class="form-control" autocomplete="off"
                id="{{ key | replace('_', '-') }}" name="whale:{{ key }}"
                {% if value is not none %}value="{{ value }}"{% endif %}>
     </div>

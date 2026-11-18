@@ -1,0 +1,23 @@
+# frpc for ctfd-whale (official frp, v0.72.0 or later).
+# Copy to conf/frp/frpc.toml next to docker-compose.yml and change the token
+# and the password. ctfd-whale adds one proxy per instance through the store
+# API: no [[proxies]] are needed here.
+
+serverAddr = "frps"
+serverPort = 7000
+
+# Same token as in frps.toml
+auth.token = "change-me"
+
+# Admin API used by ctfd-whale ("API URL", "API User", "API Password" in the
+# plugin's Router settings). The challenge containers share a network with
+# frpc and can reach this port: use a strong password.
+webServer.addr = "0.0.0.0"
+webServer.port = 7400
+webServer.user = "admin"
+webServer.password = "change-me"
+
+# Proxies created through the store are saved here and restored when frpc
+# restarts: keep it on a volume.
+[store]
+path = "/var/lib/frpc/store.json"

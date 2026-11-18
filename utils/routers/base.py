@@ -12,6 +12,8 @@ class BaseRouter(abc.ABC):
     """
 
     name: typing.ClassVar[str]
+    # whether sync() is cheap enough to run on every auto-clean run
+    periodic_sync: typing.ClassVar[bool] = False
 
     @abc.abstractmethod
     def access(self, container: WhaleContainer) -> str:
@@ -30,7 +32,10 @@ class BaseRouter(abc.ABC):
         """Stop routing to the container: (ok, message). Must be safe to repeat."""
 
     def sync(self):
-        """Bring the router in line with the running containers (at startup)."""
+        """Bring the router in line with the running containers.
+
+        Runs at startup, and on every auto-clean run if periodic_sync.
+        """
         # optional hook: nothing to do unless the router keeps its own state
         return None
 
