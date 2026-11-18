@@ -240,7 +240,16 @@ def _create_service(
 
 def _run_container(client, container, image, name, network_name, hostname, dns):
     challenge = container.challenge
-    extra = {"hostname": hostname} if hostname else {}
+    extra = {}
+    if hostname:
+        # Docker's DNS resolves container names and network aliases, not
+        # hostnames: the short name must be an alias for the other
+        # containers of the group to reach this one by it (as Swarm services
+        # get through NetworkAttachmentConfig aliases)
+        extra["hostname"] = hostname
+        extra["networking_config"] = {
+            network_name: client.api.create_endpoint_config(aliases=[hostname])
+        }
     client.containers.run(
         image=image,
         name=name,

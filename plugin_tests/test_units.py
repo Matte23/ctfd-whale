@@ -72,6 +72,10 @@ def test_choose_node(app):
 class RecordingClient:
     def __init__(self):
         self.calls = []
+        # docker-py builds endpoint configs for the negotiated API version
+        self.api = types.SimpleNamespace(
+            create_endpoint_config=lambda aliases=None: {"Aliases": aliases}
+        )
         self.services = types.SimpleNamespace(
             create=lambda **kw: self.calls.append(("service", kw)),
             list=lambda filters: [],
@@ -134,6 +138,14 @@ def test_grouped_launch(app, monkeypatch, swarm):
         dns = kw.get("dns") or kw["dns_config"]["Nameservers"]
         assert dns == ["10.9.0.2"]  # "ctfd-dns" serves DNS by default in both modes
         assert kw["labels"] == {"ctfd-whale.id": "5-abc"}
+    # P1-35: each container is reachable by its short name on the network
+    hostnames = [kw["hostname"] for _, kw in client.calls]
+    assert hostnames == ["web", "db"]
+    for (_, kw), hostname in zip(client.calls, hostnames):
+        if swarm:
+            assert kw["networks"][0]["Aliases"] == [hostname]
+        else:
+            assert kw["networking_config"] == {"5-abc": {"Aliases": [hostname]}}
     if swarm:
         constraints = {tuple(kw["constraints"]) for _, kw in client.calls}
         assert constraints == {("node.labels.name==linux-1", "node.platform.os==linux")}
