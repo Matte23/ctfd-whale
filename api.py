@@ -18,7 +18,7 @@ from .decorators import (
     frequency_limited,
     require_team_if_teams_mode,
 )
-from .utils import control
+from .utils import checks, control
 from .utils import db as container_db
 from .utils.config import whale_config
 from .utils.flags import generate_flag
@@ -112,6 +112,14 @@ class AdminContainers(Resource):
             return error
         result, message = control.remove_container(container)
         return {"success": result, "message": message}
+
+
+@admin_namespace.route("/checks")
+class AdminChecks(Resource):
+    @admins_only
+    def get(self):
+        # read-only: docker and router connectivity, for the Config page tabs
+        return {"success": True, "data": checks.run_checks()}
 
 
 @user_namespace.route("/container")

@@ -1,0 +1,6 @@
+[
+    {"name": "Whale: Docker", "config": "whale_settings/docker.html"},
+    {"name": "Whale: Router", "config": "whale_settings/router.html"},
+    {"name": "Whale: Limits", "config": "whale_settings/limits.html"},
+    {"name": "Whale: Challenges", "config": "whale_settings/challenges.html"}
+]

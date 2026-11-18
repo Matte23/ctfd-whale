@@ -1,4 +1,7 @@
-"""Settings page checks. They must only read: the page runs them on every load."""
+"""Settings checks, shown in the plugin's tabs of CTFd's Config page.
+
+They must only read: they run whenever an admin opens the Config page.
+"""
 
 import requests
 from docker.errors import APIError, DockerException, TLSParameterError
@@ -41,5 +44,5 @@ def check_router_connection():
 
 
 def run_checks():
-    checks = (check_docker_api, check_router_connection)
-    return [error for error in (check() for check in checks) if error]
+    """The error of each check, or None when it passed."""
+    return {"docker": check_docker_api(), "router": check_router_connection()}

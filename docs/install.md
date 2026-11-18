@@ -109,7 +109,7 @@ login to server success, get run id [...]
 
 ### Configure the frp router in CTFd
 
-In the plugin's settings (`Docker` in the admin menu), tab **Router**, set:
+In CTFd's **Admin → Config**, tab **Whale: Router** (under Plugins), set:
 
 * **API URL**: `http://frpc:7400`
 * **API User** / **API Password**: `webServer.user` / `webServer.password` of `frpc.toml`
@@ -155,7 +155,7 @@ docker-compose build # for pip to find requirements.txt
 docker-compose up -d
 ```
 
-go to the Whale Configuration page (`/plugins/ctfd-whale/admin/settings`)
+go to CTFd's **Admin → Config** and open the **Whale: …** tabs under Plugins (running instances are under **Instances** in the admin menu)
 
 #### Docker related configs
 

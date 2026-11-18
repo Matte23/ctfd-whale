@@ -108,7 +108,7 @@ login to server success, get run id [...]
 
 ### 在CTFd中配置frp路由
 
-在插件设置（管理菜单中的 `Docker`）的 **Router** 标签页中设置：
+在 CTFd 的 **Admin → Config** 中，Plugins 下的 **Whale: Router** 标签页中设置：
 
 * **API URL**：`http://frpc:7400`
 * **API User** / **API Password**：`frpc.toml` 中的 `webServer.user` / `webServer.password`
@@ -150,7 +150,7 @@ docker-compose build # 需要安装依赖
 docker-compose up -d
 ```
 
-进入Whale的配置页面( `/plugins/ctfd-whale/admin/settings` )，首先配置docker配置项
+进入 CTFd 的 **Admin → Config**，打开 Plugins 下的 **Whale: …** 标签页（运行中的实例在管理菜单的 **Instances** 中），首先配置docker配置项
 
 需要注意的是 `Auto Connect Network` ，如果按照上面的配置流程进行配置的话，应当是 `ctfd_containers`（默认值）
 

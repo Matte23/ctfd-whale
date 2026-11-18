@@ -3,17 +3,18 @@ import warnings
 from CTFd.api import CTFd_API_v1
 from CTFd.plugins import (
     register_admin_plugin_menu_bar,
+    register_admin_plugin_script,
     register_plugin_assets_directory,
 )
 from CTFd.plugins.challenges import CHALLENGE_CLASSES
 from CTFd.plugins.migrations import upgrade
 from CTFd.utils.decorators import admins_only
-from flask import Blueprint, render_template, request, session
+from flask import Blueprint, redirect, render_template, request, session, url_for
 from flask_apscheduler import APScheduler
 
 from .api import admin_namespace, page_args, user_namespace
 from .challenge_type import DockerChallenge
-from .utils import checks, control
+from .utils import control
 from .utils import db as container_db
 from .utils.cache import try_lock
 from .utils.docker import docker_client
@@ -44,9 +45,13 @@ def load(app):
         base_path=f"/plugins/{plugin_name}/assets",
         endpoint="plugins.ctfd-whale.assets",
     )
+    # settings: tabs in CTFd's Config page (config.json); the menu only has
+    # the running instances
     register_admin_plugin_menu_bar(
-        title="Docker", route="/plugins/ctfd-whale/admin/settings"
+        title="Instances", route="/plugins/ctfd-whale/admin/containers"
     )
+    # router/SSL toggles, connection checks and tab restore for those tabs
+    register_admin_plugin_script(f"/plugins/{plugin_name}/assets/config.js")
 
     CHALLENGE_CLASSES["docker"] = DockerChallenge
 
@@ -63,8 +68,8 @@ def load(app):
     @page_blueprint.route("/admin/settings")
     @admins_only
     def admin_list_configs():
-        errors = checks.run_checks()
-        return render_template("whale_config.html", errors=errors)
+        # the settings moved to CTFd's Config page (Plugins section)
+        return redirect(url_for("admin.config"))
 
     @page_blueprint.route("/admin/containers")
     @admins_only

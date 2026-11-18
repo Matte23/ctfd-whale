@@ -1,7 +1,7 @@
-{% from "config/macros.html" import text_field, submit_button with context %}
-<div class="tab-pane fade" id="challenges" role="tabpanel">
+{% from "whale_settings/macros.html" import text_field, submit_button with context %}
+<form class="whale-settings" data-whale-tab="challenges">
     {{ text_field("template_http_subdomain", "Subdomain Template", "Controls how the subdomain of a container is generated") }}
     {{ text_field("template_chall_flag", "Flag Template", "Controls how a flag is generated") }}
 
     {{ submit_button() }}
-</div>
+</form>

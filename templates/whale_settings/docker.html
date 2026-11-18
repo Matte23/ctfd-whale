@@ -1,5 +1,6 @@
-{% from "config/macros.html" import text_field, checkbox, submit_button with context %}
-<div class="tab-pane fade show active" id="docker" role="tabpanel" aria-autocomplete="none">
+{% from "whale_settings/macros.html" import text_field, checkbox, submit_button with context %}
+<form class="whale-settings" data-whale-tab="docker">
+    <div class="whale-check" data-whale-check="docker"></div>
     <h5>Common</h5>
     <small class="form-text text-muted">
         Common configurations for both standalone and grouped containers
@@ -33,4 +34,4 @@
     {{ text_field("docker_subnet_new_prefix", "Multi-Container Network Subnet New Prefix", "Prefix for auto created network.") }}
 
     {{ submit_button() }}
-</div>
+</form>
