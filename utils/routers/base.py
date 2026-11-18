@@ -1,33 +1,44 @@
+import abc
 import typing
 
 from ...models import WhaleContainer
 
 
-class BaseRouter:
-    name = None
+class BaseRouter(abc.ABC):
+    """A router exposes containers to players (frp, trp).
 
-    def __init__(self):
-        pass
+    Must have no side effects on creation and read its settings when used:
+    instances are shared within a process (see get_router()).
+    """
 
-    def access(self, container: WhaleContainer):
-        pass
+    name: typing.ClassVar[str]
+    # whether sync() is cheap enough to run on every auto-clean run
+    periodic_sync: typing.ClassVar[bool] = False
 
-    def register(self, container: WhaleContainer):
-        pass
+    @abc.abstractmethod
+    def access(self, container: WhaleContainer) -> str:
+        """How to reach the container, as plain text (not HTML).
 
-    def unregister(self, container: WhaleContainer):
-        pass
-
-    def release(self, container: WhaleContainer):
-        """Give back resources (e.g. ports) held for the container.
-
-        Called only once the container is gone from docker, so they can't be
-        handed to someone else while the old container still uses them.
+        A URL or a command, possibly on several lines; the frontend escapes it
+        and turns URLs into links.
         """
-        pass
 
-    def reload(self):
-        pass
+    @abc.abstractmethod
+    def register(self, container: WhaleContainer) -> tuple[bool, str]:
+        """Route traffic to the container: (ok, message)."""
 
-    def check_availability(self) -> typing.Tuple[bool, str]:
-        pass
+    @abc.abstractmethod
+    def unregister(self, container: WhaleContainer) -> tuple[bool, str]:
+        """Stop routing to the container: (ok, message). Must be safe to repeat."""
+
+    def sync(self):
+        """Bring the router in line with the running containers.
+
+        Runs at startup, and on every auto-clean run if periodic_sync.
+        """
+        # optional hook: nothing to do unless the router keeps its own state
+        return None
+
+    @abc.abstractmethod
+    def check_availability(self) -> tuple[bool, str]:
+        """Whether the router backend is reachable: (ok, message)."""

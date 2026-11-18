@@ -1,0 +1,3 @@
+-r linting.txt
+# same version as CTFd 3.8.9 (development.txt)
+pytest==8.4.2

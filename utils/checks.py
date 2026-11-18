@@ -1,48 +1,48 @@
-from docker.errors import DockerException, TLSParameterError, APIError, requests
+"""Settings checks, shown in the plugin's tabs of CTFd's Config page.
 
-from CTFd.utils import get_config
+They must only read: they run whenever an admin opens the Config page.
+"""
 
-from .docker import docker_login, get_docker_client
-from .routers import _routers
+import requests
+from docker.errors import APIError, DockerException, TLSParameterError
+
+from .config import whale_config
+from .docker import build_docker_client, docker_login
+from .routers import ROUTERS, get_router
 
 
-class WhaleChecks:
-    @staticmethod
-    def check_docker_api():
-        try:
-            client = get_docker_client()
-        except TLSParameterError as e:
-            return f"Docker TLS Parameters incorrect ({e})"
-        except DockerException as e:
-            return f"Docker API url incorrect ({e})"
-        try:
-            client.ping()
-        except (APIError, requests.RequestException):
-            return "Unable to connect to Docker API, check your API connectivity"
+def check_docker_api():
+    # a fresh client, to test the settings as they are now
+    try:
+        client = build_docker_client()
+    except TLSParameterError as e:
+        return f"Docker TLS Parameters incorrect ({e})"
+    except DockerException as e:
+        return f"Docker API url incorrect ({e})"
+    try:
+        client.ping()
+    except (APIError, requests.RequestException):
+        return "Unable to connect to Docker API, check your API connectivity"
 
-        try:
-            docker_login(client)
-        except DockerException:
-            return "Unable to log into docker registry, check your credentials"
+    try:
+        docker_login(client)
+    except DockerException:
+        return "Unable to log into docker registry, check your credentials"
+    if whale_config("docker_use_swarm"):
         swarm = client.info()["Swarm"]
         if not swarm["ControlAvailable"]:
             return "Docker swarm not available. You should initialize a swarm first. ($ docker swarm init)"
 
-    @staticmethod
-    def check_frp_connection():
-        router_conftype = get_config("whale:router_type", "frp")
-        if router_conftype not in _routers:
-            return "invalid router type: " + router_conftype
-        ok, msg = _routers[router_conftype]().check_availability()
-        if not ok:
-            return msg
 
-    @staticmethod
-    def perform():
-        errors = []
-        for attr in dir(WhaleChecks):
-            if attr.startswith("check_"):
-                err = getattr(WhaleChecks, attr)()
-                if err:
-                    errors.append(err)
-        return errors
+def check_router_connection():
+    router_type = whale_config("router_type")
+    if router_type not in ROUTERS:
+        return "invalid router type: " + router_type
+    ok, msg = get_router().check_availability()
+    if not ok:
+        return msg
+
+
+def run_checks():
+    """The error of each check, or None when it passed."""
+    return {"docker": check_docker_api(), "router": check_router_connection()}

@@ -1,0 +1,37 @@
+{% from "whale_settings/macros.html" import text_field, checkbox, submit_button with context %}
+<form class="whale-settings" data-whale-tab="docker">
+    <div class="whale-check" data-whale-check="docker"></div>
+    <h5>Common</h5>
+    <small class="form-text text-muted">
+        Common configurations for both standalone and grouped containers
+    </small><br>
+    {{ text_field("docker_api_url", "API URL", "Docker API to connect to") }}
+    {{ text_field("docker_credentials", "Credentials", "username:password for docker.io, or username:password:registry for another registry. useful for private images") }}
+    {{ text_field("docker_swarm_nodes", "Swarm Nodes", "Will pick up one from it, You should set your node with label name=windows-* or name=linux-*. Separated by commas.") }}
+    {{ checkbox("docker_use_swarm", "Use Swarm") }}
+    {{ checkbox("docker_use_ssl", "Use SSL") }}
+    {# shown only while "Use SSL" is checked (config.js) #}
+    <div class="container" id="docker-ssl-config">
+        {{ text_field("docker_ssl_ca_cert", "SSL CA Certificate", "the location of the CA certificate file used in ssl connection") }}
+        {{ text_field("docker_ssl_client_cert", "SSL Client Certificate", "the location of the client certificate file used in ssl connection") }}
+        {{ text_field("docker_ssl_client_key", "SSL Client Key", "the location of the client key file used in ssl connection") }}
+    </div>
+    <hr>
+    <h5>Standalone Containers</h5>
+    <small class="form-text text-muted">
+        Typical challenges. Under most circumstances you only need to set these.
+    </small><br>
+    {{ text_field("docker_auto_connect_network", "Auto Connect Network", "The network connected for single-containers. It's usually the same network as the frpc is in.") }}
+    {{ text_field("docker_dns", "Dns Setting", "Decide which dns will be used in container network.") }}
+    <hr>
+    <h5>Grouped Containers</h5>
+    <small class="form-text text-muted">
+        Designed for multi-container challenges
+    </small><br>
+    {{ text_field("docker_auto_connect_containers", "Auto Connect Containers", "Decide which container will be connected to multi-container-network automatically. Separated by commas.") }}
+    {{ text_field("docker_dns_containers", "DNS Containers", "Auto connect containers serving DNS to challenges. Comma-separated. Default: those named *dns* (Swarm) or all of them.") }}
+    {{ text_field("docker_subnet", "Multi-Container Network Subnet", "Subnet which will be used by auto created networks for multi-container challenges.") }}
+    {{ text_field("docker_subnet_new_prefix", "Multi-Container Network Subnet New Prefix", "Prefix for auto created network.") }}
+
+    {{ submit_button() }}
+</form>

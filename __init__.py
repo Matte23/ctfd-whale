@@ -1,51 +1,57 @@
-import fcntl
 import warnings
 
 from CTFd.api import CTFd_API_v1
 from CTFd.plugins import (
     register_admin_plugin_menu_bar,
+    register_admin_plugin_script,
     register_plugin_assets_directory,
 )
 from CTFd.plugins.challenges import CHALLENGE_CLASSES
-from CTFd.utils import get_config, set_config
+from CTFd.plugins.migrations import upgrade
 from CTFd.utils.decorators import admins_only
-from flask import Blueprint, render_template, request, session
+from flask import Blueprint, redirect, render_template, request, session, url_for
 from flask_apscheduler import APScheduler
 
-from .api import AdminContainers, admin_namespace, user_namespace
+from .api import admin_namespace, page_args, user_namespace
 from .challenge_type import DockerChallenge
-from .utils.checks import WhaleChecks
-from .utils.control import ControlUtil
-from .utils.db import DBContainer
-from .utils.docker import DockerUtils
+from .utils import control
+from .utils import db as container_db
+from .utils.cache import try_lock
+from .utils.docker import docker_client
 from .utils.exceptions import WhaleWarning
-from .utils.routers import Router
+from .utils.routers import get_router
 from .utils.setup import setup_default_configs
 
+AUTO_CLEAN_INTERVAL_SECONDS = 10
+# Upper bound of one auto-clean run; the lock expires after it in any case.
+AUTO_CLEAN_LOCK_SECONDS = 300
 
-# Keep a reference to the lock file for the life of the process: if it is
-# garbage-collected, the file is closed and the fcntl lock is released.
-_scheduler_lock_file = None
+# Layouts of the admin instances page: templates/containers/<mode>.containers.html
+VIEW_MODES = ("list", "card")
 
 
 def load(app):
-    global _scheduler_lock_file
-    app.config["RESTX_ERROR_404_HELP"] = False
-    # upgrade()
+    # the plugin's directory: CTFd keys migrations and serves assets by it
     plugin_name = __name__.split(".")[-1]
-    set_config("whale:plugin_name", plugin_name)
+    # create_all() creates missing tables; the migrations bring existing
+    # tables up to date (CTFd skips them on SQLite and only runs create_all)
     app.db.create_all()
-    if not get_config("whale:setup"):
-        setup_default_configs()
+    upgrade(plugin_name=plugin_name)
+    # every startup: settings added by newer versions get their default too
+    setup_default_configs()
 
     register_plugin_assets_directory(
         app,
         base_path=f"/plugins/{plugin_name}/assets",
         endpoint="plugins.ctfd-whale.assets",
     )
+    # settings: tabs in CTFd's Config page (config.json); the menu only has
+    # the running instances
     register_admin_plugin_menu_bar(
-        title="Docker", route="/plugins/ctfd-whale/admin/settings"
+        title="Instances", route="/plugins/ctfd-whale/admin/containers"
     )
+    # router/SSL toggles, connection checks and tab restore for those tabs
+    register_admin_plugin_script(f"/plugins/{plugin_name}/assets/config.js")
 
     CHALLENGE_CLASSES["docker"] = DockerChallenge
 
@@ -62,57 +68,86 @@ def load(app):
     @page_blueprint.route("/admin/settings")
     @admins_only
     def admin_list_configs():
-        errors = WhaleChecks.perform()
-        return render_template("whale_config.html", errors=errors)
+        # the settings moved to CTFd's Config page (Plugins section)
+        return redirect(url_for("admin.config"))
 
     @page_blueprint.route("/admin/containers")
     @admins_only
     def admin_list_containers():
-        result = AdminContainers.get()
-        view_mode = request.args.get("mode", session.get("view_mode", "list"))
+        page, per_page = page_args()
+        pagination = container_db.get_alive_containers_page(page, per_page)
+        # the mode picks an included template: only accept known values, and
+        # fall back to "list" so a bad value can't stick in the session
+        view_mode = request.args.get("mode", session.get("view_mode"))
+        if view_mode not in VIEW_MODES:
+            view_mode = "list"
         session["view_mode"] = view_mode
         return render_template(
             "whale_containers.html",
-            plugin_name=plugin_name,
-            containers=result["data"]["containers"],
-            pages=result["data"]["pages"],
-            curr_page=abs(request.args.get("page", 1, type=int)),
-            curr_page_start=result["data"]["page_start"],
+            view_mode=view_mode,
+            containers=pagination.items,
+            pages=pagination.pages,
+            curr_page=pagination.page,
         )
 
     def auto_clean_container():
         with app.app_context():
-            results = DBContainer.get_all_expired_container()
-            for r in results:
-                ControlUtil.try_remove_container(r.user_id)
+            # every worker runs this job: the lock lets one of them do the work
+            lock = try_lock("auto-clean", timeout=AUTO_CLEAN_LOCK_SECONDS)
+            if not lock.acquire():
+                return
+            try:
+                # per container, not per user: rows of deleted users have no
+                # user_id. Includes containers whose removal failed: retried here.
+                for container in container_db.get_containers_to_clean():
+                    control.remove_container(container)
+                # e.g. re-create routes lost when the router backend restarted
+                router = get_router()
+                if router.periodic_sync:
+                    try:
+                        router.sync()
+                    except Exception:
+                        app.logger.exception("[CTFd Whale] router sync failed")
+            finally:
+                lock.release()
 
     app.register_blueprint(page_blueprint)
 
     try:
-        Router.check_availability()
-        DockerUtils.init()
-    except Exception:
-        warnings.warn("Initialization Failed. Please check your configs.", WhaleWarning)
-
+        docker_client()
+    except Exception as e:
+        warnings.warn(
+            f"Docker initialization failed, check your configs: {e}",
+            WhaleWarning,
+            stacklevel=2,
+        )
     try:
-        lock_file = open("/tmp/ctfd_whale.lock", "w")
-        try:
-            fcntl.lockf(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except IOError:
-            lock_file.close()
-            raise
-        _scheduler_lock_file = lock_file
-
-        scheduler = APScheduler()
-        scheduler.init_app(app)
-        scheduler.start()
-        scheduler.add_job(
-            id="whale-auto-clean",
-            func=auto_clean_container,
-            trigger="interval",
-            seconds=10,
+        router = get_router()
+        ok, msg = router.check_availability()
+        if not ok:
+            warnings.warn(
+                f"Router not available, check your configs: {msg}",
+                WhaleWarning,
+                stacklevel=2,
+            )
+        router.sync()
+    except Exception as e:
+        warnings.warn(
+            f"Router initialization failed, check your configs: {e}",
+            WhaleWarning,
+            stacklevel=2,
         )
 
-        print("[CTFd Whale] Started successfully")
-    except IOError:
-        pass
+    scheduler = APScheduler()
+    scheduler.init_app(app)
+    scheduler.start()
+    scheduler.add_job(
+        id="whale-auto-clean",
+        func=auto_clean_container,
+        trigger="interval",
+        seconds=AUTO_CLEAN_INTERVAL_SECONDS,
+        # skip a run instead of piling them up when one takes longer
+        max_instances=1,
+        coalesce=True,
+    )
+    app.logger.info("[CTFd Whale] Started successfully")

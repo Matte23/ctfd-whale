@@ -2,74 +2,74 @@
 
 {% block value %}
     <div class="form-group">
-        <label for="value">Flag Template<br>
+        <label for="whale-flag_template">Flag Template<br>
             <small class="form-text text-muted">
                 The template used to generate the flag
             </small>
         </label>
-        <input type="text" class="form-control" name="flag_template" placeholder="Enter a Jinja2 template" required value="{{ challenge.flag_template }}">
+        <input id="whale-flag_template" type="text" class="form-control" name="flag_template" placeholder="Enter a Jinja2 template" required value="{{ challenge.flag_template }}">
     </div>
     <div class="form-group">
-        <label for="value">Docker Image<br>
+        <label for="whale-docker_image">Docker Image<br>
             <small class="form-text text-muted">
                 The docker image used to deploy
             </small>
         </label>
-        <input type="text" class="form-control" name="docker_image" placeholder="Enter docker image name"
+        <input id="whale-docker_image" type="text" class="form-control" name="docker_image" placeholder="Enter docker image name"
                required value="{{ challenge.docker_image }}">
     </div>
     <div class="form-group">
-        <label for="value">Frp Redirect Type<br>
+        <label for="whale-redirect_type">Frp Redirect Type<br>
             <small class="form-text text-muted">
                 Decide the redirect type how frp redirect traffic
             </small>
         </label>
-        <select class="form-control" name="redirect_type">
+        <select id="whale-redirect_type" class="form-control" name="redirect_type">
             <option value="http" {% if challenge.redirect_type == "http" %}selected{% endif %}>HTTP</option>
             <option value="direct" {% if challenge.redirect_type == "direct" %}selected{% endif %}>Direct</option>
         </select>
     </div>
     <div class="form-group">
-        <label for="value">Frp Redirect Port<br>
+        <label for="whale-redirect_port">Frp Redirect Port<br>
             <small class="form-text text-muted">
                 Decide which port in the instance that frp should redirect traffic for
             </small>
         </label>
-        <input type="number" class="form-control" name="redirect_port" placeholder="Enter the port you want to open"
+        <input id="whale-redirect_port" type="number" class="form-control" name="redirect_port" placeholder="Enter the port you want to open"
                required value="{{ challenge.redirect_port }}">
     </div>
     <div class="form-group">
-        <label for="value">Docker Container Memory Limit<br>
+        <label for="whale-memory_limit">Docker Container Memory Limit<br>
             <small class="form-text text-muted">
                 The memory usage limit
             </small>
         </label>
-        <input type="text" class="form-control" name="memory_limit" placeholder="Enter the memory limit"
+        <input id="whale-memory_limit" type="text" class="form-control" name="memory_limit" placeholder="Enter the memory limit"
                value="{{ challenge.memory_limit }}" required>
     </div>
     <div class="form-group">
-        <label for="value">Docker Container CPU Limit<br>
+        <label for="whale-cpu_limit">Docker Container CPU Limit<br>
             <small class="form-text text-muted">
                 The CPU usage limit
             </small>
         </label>
-        <input type="number" class="form-control" name="cpu_limit" placeholder="Enter the cpu limit"
+        <input id="whale-cpu_limit" type="number" step="any" min="0" class="form-control" name="cpu_limit" placeholder="Enter the cpu limit"
                value="{{ challenge.cpu_limit }}" required>
     </div>
     <div class="form-group">
-        <label for="value">Docker Init<br>
+        <label for="whale-init">Docker Init<br>
             <small class="form-text text-muted">
                 Enable Docker init
             </small>
         </label>
-        <input type="checkbox" name="init" value="false" {% if challenge.init %}checked{% endif %}>
+        <input id="whale-init" type="checkbox" name="init" value="false" {% if challenge.init %}checked{% endif %}>
     </div>
     <div class="form-group">
-        <label for="value">Privileged<br>
+        <label for="whale-privileged">Privileged<br>
             <small class="form-text text-muted">
                 Run container in privileged mode
             </small>
         </label>
-        <input type="checkbox" name="privileged" value="false" {% if challenge.privileged %}checked{% endif %}>
+        <input id="whale-privileged" type="checkbox" name="privileged" value="false" {% if challenge.privileged %}checked{% endif %}>
     </div>
 {% endblock %}

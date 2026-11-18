@@ -1,129 +1,200 @@
-import warnings
+"""frp router: one frpc proxy per container, managed through frpc's store API.
+
+Needs the official frp, v0.72.0 or later, with the store enabled in
+frpc.toml ([store] path = ...) and the admin API (webServer.*) reachable
+with user and password. Each proxy is created, updated and deleted on its
+own (POST/PUT/DELETE /api/store/proxies); frpc applies the change right
+away and keeps the store on disk across restarts.
+
+Only proxies named PROXY_PREFIX + <container name> are managed: any other
+store proxy an admin adds is left alone.
+"""
 
 from flask import current_app
-from requests import session, RequestException
+from requests import RequestException, session
 
-from CTFd.models import db
-from CTFd.utils import get_config, set_config
-
-from .base import BaseRouter
-from ..cache import CacheProvider
-from ..db import DBContainer
-from ..exceptions import WhaleError, WhaleWarning
 from ...models import WhaleContainer
+from .. import db as container_db
+from ..config import whale_config
+from .base import BaseRouter
+
+REQUEST_TIMEOUT_SECONDS = 5
+PROXY_PREFIX = "whale-"
+STORE_PATH = "/api/store/proxies"
 
 
 class FrpRouter(BaseRouter):
     name = "frp"
+    # cheap reconcile (one GET when nothing changed): run on every auto-clean
+    periodic_sync = True
+    # redirect type of the challenge -> frp proxy type
     types = {
-        'direct': 'tcp',
-        'http': 'http',
+        "direct": "tcp",
+        "http": "http",
     }
-
-    class FrpRule:
-        def __init__(self, name, config):
-            self.name = name
-            self.config = config
-
-        def __str__(self) -> str:
-            return f'[{self.name}]\n' + '\n'.join(f'{k} = {v}' for k, v in self.config.items())
 
     def __init__(self):
         super().__init__()
         self.ses = session()
-        self.url = get_config("whale:frp_api_url").rstrip("/")
-        self.common = ''
-        try:
-            CacheProvider(app=current_app).init_port_sets()
-        except Exception:
-            warnings.warn(
-                "cache initialization failed",
-                WhaleWarning
+
+    @property
+    def url(self):
+        return whale_config("frp_api_url").rstrip("/")
+
+    def _request(self, method, path, **kwargs):
+        password = whale_config("frp_api_password")
+        auth = (str(whale_config("frp_api_user")), str(password)) if password else None
+        return self.ses.request(
+            method,
+            self.url + path,
+            auth=auth,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            **kwargs,
+        )
+
+    @staticmethod
+    def proxy_name(container: WhaleContainer) -> str:
+        return PROXY_PREFIX + container.name
+
+    def _routable(self, container: WhaleContainer) -> bool:
+        challenge = container.challenge
+        if challenge is None:
+            # deleted: the container is waiting for cleanup
+            return False
+        if challenge.redirect_type not in self.types:
+            # rejected when saving challenges; may still exist from before
+            current_app.logger.warning(
+                "[CTFd Whale] container %s: unknown redirect type %r, not routed",
+                container.id,
+                challenge.redirect_type,
             )
+            return False
+        # direct containers need their port (allocated in register)
+        return challenge.redirect_type != "direct" or bool(container.port)
 
-    def reload(self, exclude=None):
-        rules = []
-        for container in DBContainer.get_all_alive_container():
-            if container.uuid == exclude:
-                continue
-            name = f'{container.challenge.redirect_type}_{container.user_id}_{container.uuid}'
-            config = {
-                'type': self.types[container.challenge.redirect_type],
-                'local_ip': f'{container.user_id}-{container.uuid}',
-                'local_port': container.challenge.redirect_port,
-                'use_compression': 'true',
-            }
-            if config['type'] == 'http':
-                config['subdomain'] = container.http_subdomain
-            elif config['type'] == 'tcp':
-                config['remote_port'] = container.port
-            rules.append(self.FrpRule(name, config))
+    def definition(self, container: WhaleContainer) -> dict:
+        """The store's JSON body for the container's proxy."""
+        proxy_type = self.types[container.challenge.redirect_type]
+        block = {
+            "localIP": container.name,
+            "localPort": int(container.challenge.redirect_port),
+            "transport": {"useCompression": True},
+        }
+        if proxy_type == "http":
+            block["subdomain"] = container.http_subdomain
+        else:
+            block["remotePort"] = int(container.port)
+        return {
+            "name": self.proxy_name(container),
+            "type": proxy_type,
+            proxy_type: block,
+        }
 
-        try:
-            if not self.common:
-                common = get_config("whale:frp_config_template", '')
-                if '[common]' in common:
-                    self.common = common
-                else:
-                    remote = self.ses.get(f'{self.url}/api/config')
-                    assert remote.status_code == 200
-                    set_config("whale:frp_config_template", remote.text)
-                    self.common = remote.text
-            config = self.common + '\n' + '\n'.join(str(r) for r in rules)
-            assert self.ses.put(
-                f'{self.url}/api/config', config, timeout=5
-            ).status_code == 200
-            assert self.ses.get(
-                f'{self.url}/api/reload', timeout=5
-            ).status_code == 200
-        except (RequestException, AssertionError) as e:
-            raise WhaleError(
-                '\nfrpc request failed\n' +
-                (f'{e}\n' if str(e) else '') +
-                'please check the frp related configs'
-            ) from None
+    @staticmethod
+    def _matches(current: dict, wanted: dict) -> bool:
+        """Whether the stored proxy has every value we set (frpc may add others)."""
+
+        def contains(have, want):
+            if isinstance(want, dict):
+                return isinstance(have, dict) and all(
+                    contains(have.get(k), v) for k, v in want.items()
+                )
+            return have == want
+
+        return contains(current, wanted)
+
+    def _put(self, definition: dict):
+        """Create the proxy, or update it when it already exists."""
+        resp = self._request("POST", STORE_PATH, json=definition)
+        if resp.status_code == 409:
+            resp = self._request(
+                "PUT", f"{STORE_PATH}/{definition['name']}", json=definition
+            )
+        resp.raise_for_status()
+
+    def _delete(self, name: str):
+        resp = self._request("DELETE", f"{STORE_PATH}/{name}")
+        # already gone: fine, removals may be retried
+        if resp.status_code != 404:
+            resp.raise_for_status()
 
     def access(self, container: WhaleContainer):
-        if container.challenge.redirect_type == 'direct':
-            return f'nc {get_config("whale:frp_direct_ip_address", "127.0.0.1")} {container.port}'
-        elif container.challenge.redirect_type == 'http':
-            host = get_config("whale:frp_http_domain_suffix", "")
-            port = get_config("whale:frp_http_port", "80")
-            host += f':{port}' if port != 80 else ''
-            return f'<a target="_blank" href="http://{container.http_subdomain}.{host}/">Link to the Challenge</a>'
-        return ''
+        if container.challenge.redirect_type == "direct":
+            return f'nc {whale_config("frp_direct_ip_address")} {container.port}'
+        elif container.challenge.redirect_type == "http":
+            host = whale_config("frp_http_domain_suffix")
+            port = whale_config("frp_http_port")
+            host += f":{port}" if port != 80 else ""
+            return f"http://{container.http_subdomain}.{host}/"
+        return ""
 
     def register(self, container: WhaleContainer):
-        if container.challenge.redirect_type == 'direct':
-            if not container.port:
-                port = CacheProvider(app=current_app).get_available_port()
-                if not port:
-                    return False, 'No available ports. Please wait for a few minutes.'
-                container.port = port
-                db.session.commit()
-        elif container.challenge.redirect_type == 'http':
-            # config['subdomain'] = container.http_subdomain
-            pass
+        if container.challenge.redirect_type == "direct" and not container.port:
+            port = container_db.allocate_port(
+                container,
+                range(
+                    int(whale_config("frp_direct_port_minimum")),
+                    int(whale_config("frp_direct_port_maximum")) + 1,
+                ),
+            )
+            if port is None:
+                return False, "No available ports. Please wait for a few minutes."
+        if not self._routable(container):
+            return False, "Unable to register the instance, please try again later."
         try:
-            self.reload()
-        except WhaleError as e:
-            print(e.message)
-            return False, 'Unable to register the instance, please try again later.'
-        return True, 'success'
+            self._put(self.definition(container))
+        except RequestException:
+            current_app.logger.exception("[CTFd Whale] frpc: registering failed")
+            return False, "Unable to register the instance, please try again later."
+        return True, "success"
 
     def unregister(self, container: WhaleContainer):
-        self.reload(exclude=container.uuid)
-        return True, 'success'
+        try:
+            self._delete(self.proxy_name(container))
+        except RequestException as e:
+            return False, f"frpc request failed: {e}"
+        return True, "success"
 
-    def release(self, container: WhaleContainer):
-        if container.challenge.redirect_type == 'direct' and container.port:
-            CacheProvider(app=current_app).add_available_port(container.port)
+    def sync(self):
+        """Make frpc's whale-* proxies match the running containers.
+
+        Creates missing or outdated proxies and deletes those of containers
+        that are gone, e.g. after frpc lost its store or a removal failed.
+        """
+        resp = self._request("GET", STORE_PATH)
+        resp.raise_for_status()
+        current = {
+            proxy["name"]: proxy
+            for proxy in resp.json().get("proxies") or []
+            if str(proxy.get("name", "")).startswith(PROXY_PREFIX)
+        }
+        wanted = {
+            self.proxy_name(c): self.definition(c)
+            for c in container_db.get_running_containers()
+            if self._routable(c)
+        }
+        for name in current.keys() - wanted.keys():
+            self._delete(name)
+        for name, definition in wanted.items():
+            if name not in current or not self._matches(current[name], definition):
+                self._put(definition)
 
     def check_availability(self):
         try:
-            resp = self.ses.get(f'{self.url}/api/status', timeout=2.0)
-        except RequestException as e:
-            return False, 'Unable to access frpc admin api'
-        if resp.status_code == 401:
-            return False, 'frpc admin api unauthorized'
-        return True, 'Available'
+            resp = self._request("GET", "/api/status")
+            if resp.status_code == 401:
+                return (
+                    False,
+                    "frpc admin api unauthorized: check the frp API user and password",
+                )
+            store = self._request("GET", STORE_PATH)
+        except RequestException:
+            return False, "Unable to access frpc admin api"
+        if store.status_code == 404:
+            return False, (
+                "frpc store is not enabled: set [store] path in frpc.toml "
+                "(needs the official frp, v0.72.0 or later)"
+            )
+        if not store.ok:
+            return False, f"frpc store api error: HTTP {store.status_code}"
+        return True, "Available"

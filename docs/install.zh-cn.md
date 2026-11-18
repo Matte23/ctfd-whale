@@ -64,127 +64,64 @@ docker-compose up -d
 
 访问<http://localhost>（或8000端口），对CTFd进行初始配置
 
-### 配置frps
+### 配置frp
 
-frps可以直接通过docker-compose与CTFd同步启动。
+ctfd-whale 使用 **frp 官方镜像**（`fatedier/frps` 与 `fatedier/frpc`），版本
+**v0.72.0 或更高**，配置格式为 TOML。插件为每个实例通过 frpc 的 *store* API
+创建一个名为 `whale-<容器名>` 的代理；frpc 会立即生效，并将 store 持久化到磁盘，
+重启后自动恢复。无需在 frpc 配置中手动列出代理。
 
-首先在networks中添加一个网络，用于frpc与frps之间的通信，并添加frps service
-
-```yml
-services:
-    ...
-    frps:
-        image: glzjin/frp
-        restart: always
-        volumes:
-            - ./conf/frp:/conf
-        entrypoint:
-            - /usr/local/bin/frps
-            - -c
-            - /conf/frps.ini
-        ports:
-            - 10000-10100:10000-10100  # 映射direct类型题目的端口
-            - 8001:8001  # 映射http类型题目的端口
-        networks:
-            default:  # 需要将frps暴露到公网以正常访问题目容器
-            frp_connect:
-
-networks:
-    ...
-    frp_connect:
-        driver: overlay
-        internal: true
-        ipam:
-            config:
-                - subnet: 172.1.0.0/16
-```
-
-先创建目录 `./conf/frp`
+示例 compose 文件（`docker-compose.example.yml`）已包含这两个服务。将插件自带的
+示例配置复制到 compose 文件旁：
 
 ```bash
-mkdir ./conf/frp
+mkdir -p conf/frp
+cp CTFd/plugins/ctfd-whale/docs/frp/frps.toml CTFd/plugins/ctfd-whale/docs/frp/frpc.toml conf/frp/
 ```
 
-接着创建 `./conf/frp/frps.ini` 文件，填写：
+然后修改：
 
-```ini
-[common]
-# 下面两个端口注意不要与direct类型题目端口范围重合
-bind_port = 7987  # frpc 连接到 frps 的端口
-vhost_http_port = 8001  # frps 映射http类型题目的端口
-token = your_token
-subdomain_host = node3.buuoj.cn  # 访问http题目容器的主机名
-```
-
-### 配置frpc
-
-同样，在networks中再添加一个网络，用于frpc与题目容器之间的通信，并添加frpc service
-
-```yml
-services:
-    ...
-    frpc:
-        image: glzjin/frp:latest
-        restart: always
-        volumes:
-          - ./conf/frp:/conf/
-        entrypoint:
-          - /usr/local/bin/frpc
-          - -c
-          - /conf/frpc.ini
-        depends_on:
-          - frps #frps需要先成功运行
-        networks:
-            frp_containers:  # 供frpc访问题目容器
-            frp_connect:  # 供frpc访问frps, CTFd访问frpc
-                ipv4_address: 172.1.0.3
-
-networks:
-    ...
-    frp_containers:
-        driver: overlay
-        internal: true  # 如果允许题目容器访问外网，则可以去掉
-        attachable: true
-        ipam:
-            config:
-                - subnet: 172.2.0.0/16
-```
-
-同样，我们需要创建一个 `./conf/frp/frpc.ini`
-
-```ini
-[common]
-token = your_token
-server_addr = frps
-server_port = 7897  # 对应 frps 的 bind_port
-admin_addr = 172.1.0.3  # 请参考“安全事项”
-admin_port = 7400
-```
-
-### 检查frp配置是否正确
-
-此时可以执行 `docker-compose up -d` 更新compose配置
-
-通过查看日志 `docker-compose logs frpc` ，应当能看到frpc产生了以下日志：
-
-```log
-[service.go:224] login to server success, get run id [******], server udp port [******]
-[service.go:109] admin server listen on ******
-```
-
-说明frpc与frps皆配置正常
-
-注：此例中目录结构为：
+* `auth.token`：两个文件中填写相同的随机值。
+* `frpc.toml` 中的 `webServer.password`：强随机密码。**题目容器与 frpc 处于同一网络，
+  可以访问其管理端口**，该密码用于防止选手添加或删除路由。
+* `frps.toml` 中的 `subDomainHost` 与 `vhostHTTPPort`：指向 frps 的域名，以及 http
+  类型题目使用的端口。
+* `frps.toml` 中的 `allowPorts`：direct（TCP）类型题目的端口范围，需与插件设置中的
+  direct 端口范围及 compose 文件中 frps 映射的端口一致（默认 `10000-10100`）。
 
 ```
 CTFd/
     conf/
-        nginx  # CTFd 2.5.0+中自带
+        nginx/
         frp/
-            frpc.ini
-            frps.ini
-    serve.py
+            frps.toml
+            frpc.toml
+    docker-compose.yml
 ```
+
+执行 `docker compose up -d` 启动，然后查看 `docker compose logs frpc`：
+
+```log
+admin server listen on 0.0.0.0:7400
+login to server success, get run id [...]
+```
+
+### 在CTFd中配置frp路由
+
+在 CTFd 的 **Admin → Config** 中，Plugins 下的 **Whale: Router** 标签页中设置：
+
+* **API URL**：`http://frpc:7400`
+* **API User** / **API Password**：`frpc.toml` 中的 `webServer.user` / `webServer.password`
+* **Http Domain Suffix** / **External Http Port**：`frps.toml` 中的 `subDomainHost` / `vhostHTTPPort`
+* **Direct Minimum/Maximum Port**：`frps.toml` 中 `allowPorts` 的范围
+
+设置页面会检查连接：密码错误，或 frpc 未启用 store（`frpc.toml` 中的 `[store] path`）时会给出提示。
+
+#### 从旧版本 ctfd-whale 升级
+
+旧版本使用 frp 已弃用的 INI 格式、第三方镜像以及 frpc 配置模板设置，并在每次变更时
+重写 frpc 的完整配置。升级时：将 frp 服务替换为上述官方镜像与 TOML 配置，然后在插件中
+设置 API 用户名与密码。正在运行的实例的代理会在几秒内自动重建。
 
 ### 配置CTFd
 
@@ -213,9 +150,9 @@ docker-compose build # 需要安装依赖
 docker-compose up -d
 ```
 
-进入Whale的配置页面( `/plugins/ctfd-whale/admin/settings` )，首先配置docker配置项
+进入 CTFd 的 **Admin → Config**，打开 Plugins 下的 **Whale: …** 标签页（运行中的实例在管理菜单的 **Instances** 中），首先配置docker配置项
 
-需要注意的是 `Auto Connect Network` ，如果按照上面的配置流程进行配置的话，应当是 `ctfd_frp_containers`
+需要注意的是 `Auto Connect Network` ，如果按照上面的配置流程进行配置的话，应当是 `ctfd_containers`（默认值）
 
 如果不确定的话，可以通过下面的命令列出CTFd目录compose生成的所有network
 
@@ -223,16 +160,7 @@ docker-compose up -d
 docker network ls -f "label=com.docker.compose.project=ctfd" --format "{{.Name}}"
 ```
 
-然后检查frp配置项是否正确
-
-* `HTTP Domain Suffix` 与 frps 的 `subdomain_host` 保持一致
-* `HTTP Port` 与 frps 的 `vhost_http_port` 保持一致
-* `Direct IP Address` 为能访问到 frps 相应端口(例子中为10000-10100) 的IP
-* `Direct Minimum Port` 与 `Direct Maximum Port` 显然可得
-* 只要正确填写了 `API URL` ，Whale 会自动获取 frpc 的配置文件作为 `Frpc config template`
-* 通过设置 `Frpc config template` 可以覆盖原有 `frpc.ini` 文件
-
-至此，CTFd-Whale 已经马马虎虎可以正常使用了。
+然后检查frp配置项是否正确：参见上文「在CTFd中配置frp路由」。
 
 ### 配置nginx
 
@@ -302,9 +230,9 @@ ENV METHOD=aes-256-cfb
 
 ## 安全事项
 
-* 后台配置中flag与domain模版理论上存在ssti（feature），请不要将管理员账号给不可信第三方
-* 由于例子中frpc并没有开启鉴权，请不要将frpc的bind_addr设置为`0.0.0.0`。这样会导致利用任何一道能发起http请求的题目都能修改frpc配置。
-* 如果出于配置复杂性考虑，题目容器能够访问frpc，请开启frpc的Basic Auth，并以 `http://username:password@frpc:7400` 的格式设置frpc API URL
+* 请不要将管理员账号给不可信第三方：管理员可以决定在 Docker 主机上运行哪些镜像。（flag 与子域名模板在 Jinja 沙箱中渲染。）
+* 题目容器与 frpc 处于同一网络，可以访问其管理 API：请务必在 `frpc.toml` 中设置强随机的 `webServer.password`，并在插件 Router 设置中填写相同的密码。
+* 访问 Docker API 等同于拥有 Docker 主机的 root 权限：请相应地保护 CTFd 与主机。
 
 ## 高级部署
 

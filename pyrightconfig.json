@@ -1,6 +1,6 @@
 {
     "include": ["."],
-    "extraPaths": ["/home/matteo/Gitted/CTFd"],
+    "extraPaths": ["../CTFd"],
     "reportMissingImports": true,
     "reportUnknownVariableType": false,
     "reportUnknownMemberType": false

@@ -61,131 +61,71 @@ docker-compose up -d
 
 take a look at <http://localhost>(or port 8000) and setup CTFd
 
-### Configure frps
+### Configure frp
 
-frps could be started by docker-compose along with CTFd
+ctfd-whale uses the **official frp images** (`fatedier/frps` and
+`fatedier/frpc`), **v0.72.0 or later**, configured in TOML. For each instance
+the plugin creates one proxy, named `whale-<container>`, through frpc's
+*store* API; frpc applies it immediately and keeps the store on disk across
+restarts. Nothing has to be listed in frpc's config by hand.
 
-define a network for communication between frpc and frps, and create a frps service block
-
-```yml
-services:
-    ...
-    frps:
-        image: glzjin/frp
-        restart: always
-        volumes:
-            - ./conf/frp:/conf
-        entrypoint:
-            - /usr/local/bin/frps
-            - -c
-            - /conf/frps.ini
-        ports:
-            - 10000-10100:10000-10100  # for "direct" challenges
-            - 8001:8001  # for "http" challenges
-        networks:
-            default:  # frps ports should be mapped to host
-            frp_connect:
-
-networks:
-    ...
-    frp_connect:
-        driver: overlay
-        internal: true
-        ipam:
-            config:
-                - subnet: 172.1.0.0/16
-```
-
-Create a folder in `conf/` called `frp`
+The example compose file (`docker-compose.example.yml`) already contains both
+services. Copy the example configs shipped with the plugin next to the
+compose file:
 
 ```bash
-mkdir ./conf/frp
+mkdir -p conf/frp
+cp CTFd/plugins/ctfd-whale/docs/frp/frps.toml CTFd/plugins/ctfd-whale/docs/frp/frpc.toml conf/frp/
 ```
 
-then create a configuration file for frps `./conf/frp/frps.ini`, and fill it with:
+then edit them:
 
-```ini
-[common]
-# following ports must not overlap with "direct" port range defined in the compose file
-bind_port = 7987  # port for frpc to connect to
-vhost_http_port = 8001  # port for mapping http challenges
-token = your_token
-subdomain_host = node3.buuoj.cn
-# hostname that's mapped to frps by some reverse proxy (or IS frps itself)
-```
-
-### Configure frpc
-
-Likewise, create a network and a service for frpc
-
-the network allows challenges to be accessed by frpc
-
-```yml
-services:
-    ...
-    frpc:
-        image: glzjin/frp:latest
-        restart: always
-        volumes:
-          - ./conf/frp:/conf/
-        entrypoint:
-          - /usr/local/bin/frpc
-          - -c
-          - /conf/frpc.ini
-        depends_on:
-          - frps #need frps to run first
-        networks:
-            frp_containers:
-            frp_connect:
-                ipv4_address: 172.1.0.3
-
-networks:
-    ...
-    frp_containers:  # challenge containers are attached to this network
-        driver: overlay
-        internal: true
-        # if challenge containers are allowed to access the internet, remove this line
-        attachable: true
-        ipam:
-            config:
-                - subnet: 172.2.0.0/16
-```
-
-Likewise, create an frpc config file `./conf/frp/frpc.ini`
-
-```ini
-[common]
-token = your_token
-server_addr = frps
-server_port = 7897  # == frps.bind_port
-admin_addr = 172.1.0.3  # refer to "Security"
-admin_port = 7400
-```
-
-### Verify frp configurations
-
-update compose stack with `docker-compose up -d`
-
-by executing `docker-compose logs frpc`, you should see that frpc produced following logs:
-
-```log
-[service.go:224] login to server success, get run id [******], server udp port [******]
-[service.go:109] admin server listen on ******
-```
-
-by seeing this, you can confirm that frpc/frps is set up correctly.
-
-Note: folder layout in this guide:
+* `auth.token`: the same random value in both files.
+* `webServer.password` in `frpc.toml`: a strong random value. **The challenge
+  containers share a network with frpc and can reach its admin port**, so this
+  password is what keeps players from adding or removing routes.
+* `subDomainHost` and `vhostHTTPPort` in `frps.toml`: the domain whose
+  subdomains point to frps, and the port HTTP challenges are served on.
+* `allowPorts` in `frps.toml`: the port range for "direct" (TCP) challenges.
+  It must match the plugin's direct port range and the ports published for
+  frps in the compose file (`10000-10100` by default).
 
 ```
 CTFd/
     conf/
-        nginx/  # included in CTFd 2.5.0+
+        nginx/
         frp/
-            frpc.ini
-            frps.ini
-    serve.py <- this is just an anchor
+            frps.toml
+            frpc.toml
+    docker-compose.yml
 ```
+
+Start the stack with `docker compose up -d`, then check `docker compose logs frpc`:
+
+```log
+admin server listen on 0.0.0.0:7400
+login to server success, get run id [...]
+```
+
+### Configure the frp router in CTFd
+
+In CTFd's **Admin → Config**, tab **Whale: Router** (under Plugins), set:
+
+* **API URL**: `http://frpc:7400`
+* **API User** / **API Password**: `webServer.user` / `webServer.password` of `frpc.toml`
+* **Http Domain Suffix** / **External Http Port**: `subDomainHost` / `vhostHTTPPort` of `frps.toml`
+* **Direct Minimum/Maximum Port**: the `allowPorts` range of `frps.toml`
+
+The settings page checks the connection: it reports a wrong password, or a
+frpc without the store enabled (`[store] path` in `frpc.toml`).
+
+#### Upgrading from older ctfd-whale versions
+
+Older versions used frp's deprecated INI format, third-party images and a
+frpc config template setting, rewriting frpc's whole config on every change.
+To upgrade: replace the frp services with the official images and the TOML
+configs above, then set the API user and password in the plugin. The proxies
+of running instances are re-created automatically within a few seconds.
 
 ### Configure CTFd
 
@@ -215,11 +155,11 @@ docker-compose build # for pip to find requirements.txt
 docker-compose up -d
 ```
 
-go to the Whale Configuration page (`/plugins/ctfd-whale/admin/settings`)
+go to CTFd's **Admin → Config** and open the **Whale: …** tabs under Plugins (running instances are under **Instances** in the admin menu)
 
 #### Docker related configs
 
-`Auto Connect Network`, if you strictly followed the guide, should be `ctfd_frp_containers`
+`Auto Connect Network`, if you strictly followed the guide, should be `ctfd_containers` (the default)
 
 If you're not sure about that, this command lists all networks in the current stack
 
@@ -229,12 +169,7 @@ docker network ls -f "label=com.docker.compose.project=ctfd" --format "{{.Name}}
 
 #### frp related configs
 
-* `HTTP Domain Suffix` should be consistent with `subdomain_host` in frps
-* `HTTP Port` with `vhost_http_port` in frps
-* `Direct IP Address` should be a hostname/ip address that can be used to access frps
-* `Direct Minimum Port` and `Direct Maximum Port`, you know what to do
-* as long as `API URL` is filled in correctly, Whale will read the config of the connected frpc into `Frpc config template`
-* setting `Frpc config template` will override contents in `frpc.ini`
+See [Configure the frp router in CTFd](#configure-the-frp-router-in-ctfd).
 
 Whale should be kinda usable at this moment.
 
@@ -295,9 +230,9 @@ see how grouped containers are created in the [code](utils/docker.py#L58)
 
 ## Security
 
-* Please do not allow untrusted people to access the admin account. Theoretically there's an SSTI vulnerability in the config page.
-* Do not set bind_addr of the frpc to `0.0.0.0` if you are following this guide. This may enable contestants to override frpc configurations.
-* If you are annoyed by the complicated configuration, and you just want to set bind_addr = 0.0.0.0, remember to enable Basic Auth included in frpc, and set API URL accordingly, for example, `http://username:password@frpc:7400`
+* Only give the admin account to trusted people: admins control which images run on your Docker host. (Flag and subdomain templates run in a Jinja sandbox.)
+* Challenge containers share a network with frpc and can reach its admin API: always set a strong `webServer.password` in `frpc.toml`, and the same password in the plugin's Router settings.
+* Access to the Docker API is equivalent to root on the Docker host: protect CTFd, and the host, accordingly.
 
 ## Advanced Deployment
 

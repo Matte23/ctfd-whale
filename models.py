@@ -1,35 +1,9 @@
 import uuid
 from datetime import datetime
 
-from CTFd.models import db, Challenges
-from CTFd.utils import get_config
-from jinja2 import Template
+from CTFd.models import Challenges, db
 
-
-class WhaleConfig(db.Model):
-    key = db.Column(db.String(length=128), primary_key=True)
-    value = db.Column(db.Text)
-
-    def __init__(self, key, value):
-        self.key = key
-        self.value = value
-
-    def __repr__(self):
-        return "<WhaleConfig {0} {1}>".format(self.key, self.value)
-
-
-class WhaleRedirectTemplate(db.Model):
-    key = db.Column(db.String(20), primary_key=True)
-    frp_template = db.Column(db.Text)
-    access_template = db.Column(db.Text)
-
-    def __init__(self, key, access_template, frp_template):
-        self.key = key
-        self.access_template = access_template
-        self.frp_template = frp_template
-
-    def __repr__(self):
-        return "<WhaleRedirectTemplate {0}>".format(self.key)
+from .utils.templates import render_http_subdomain
 
 
 class DockerChallenges(Challenges):
@@ -46,25 +20,42 @@ class DockerChallenges(Challenges):
     init = db.Column(db.Boolean, default=False)
     privileged = db.Column(db.Boolean, default=False)
 
-    docker_image = db.Column(db.Text, default=0)
-    redirect_type = db.Column(db.Text, default=0)
-    redirect_port = db.Column(db.Integer, default=0)
-
-    def __init__(self, *args, **kwargs):
-        kwargs["initial"] = kwargs["value"]
-        super(DockerChallenges, self).__init__(**kwargs)
+    docker_image = db.Column(db.Text)
+    redirect_type = db.Column(db.Text)
+    redirect_port = db.Column(db.Integer)
 
 
 class WhaleContainer(db.Model):
+    # status values. REMOVING: removal failed partway, auto-clean retries it;
+    # the container no longer counts as the user's running instance.
+    STATUS_RUNNING = 1
+    STATUS_REMOVING = 2
+
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    user_id = db.Column(None, db.ForeignKey("users.id"))
-    challenge_id = db.Column(None, db.ForeignKey("challenges.id"))
+    # SET NULL, not CASCADE: deleting a user, challenge or flag must keep the
+    # row, otherwise auto-clean can't find the docker resources to remove
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    challenge_id = db.Column(
+        db.Integer, db.ForeignKey("challenges.id", ondelete="SET NULL"), nullable=True
+    )
+    # UTC, like CTFd's own timestamps
     start_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     renew_count = db.Column(db.Integer, nullable=False, default=0)
-    status = db.Column(db.Integer, default=1)
+    status = db.Column(db.Integer, default=STATUS_RUNNING)
     uuid = db.Column(db.String(256))
-    port = db.Column(db.Integer, nullable=True, default=0)
-    flag_id = db.Column(db.Integer, db.ForeignKey("flags.id"))
+    # docker name and whale_id label of the resources: "<user_id>-<uuid>".
+    # Stored so the resources can still be found once user_id is NULL.
+    name = db.Column(db.String(256))
+    # Resources held by the container, allocated in utils/db.py. Unique, so
+    # two containers can never get the same one; deleting the row (only done
+    # once the docker resources are gone) frees them. NULL: none held.
+    port = db.Column(db.Integer, nullable=True, unique=True)
+    subnet = db.Column(db.String(64), nullable=True, unique=True)
+    flag_id = db.Column(
+        db.Integer, db.ForeignKey("flags.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Relationships
     user = db.relationship(
@@ -80,34 +71,31 @@ class WhaleContainer(db.Model):
     )
 
     @property
+    def is_removing(self):
+        return self.status == WhaleContainer.STATUS_REMOVING
+
+    @property
     def http_subdomain(self):
-        return Template(
-            get_config("whale:template_http_subdomain", "{{ container.uuid }}")
-        ).render(container=self)
+        return render_http_subdomain(self)
 
     def __init__(self, user_id, challenge_id, flag_id):
         self.user_id = user_id
         self.challenge_id = challenge_id
-        self.start_time = datetime.now()
+        self.start_time = datetime.utcnow()
         self.renew_count = 0
         self.uuid = str(uuid.uuid4())
+        self.name = f"{user_id}-{self.uuid}"
         self.flag_id = flag_id
 
     @property
     def user_access(self):
-        return Template(
-            WhaleRedirectTemplate.query.filter_by(key=self.challenge.redirect_type)
-            .first()
-            .access_template
-        ).render(container=self, get_config=get_config)
+        """How to reach the container: the same text players get (plain text)."""
+        if self.challenge is None:
+            return ""
+        # imported here: the routers import this module
+        from .utils.routers import get_router
 
-    @property
-    def frp_config(self):
-        return Template(
-            WhaleRedirectTemplate.query.filter_by(key=self.challenge.redirect_type)
-            .first()
-            .frp_template
-        ).render(container=self, get_config=get_config)
+        return get_router().access(self)
 
     def __repr__(self):
         return "<WhaleContainer ID:{0} {1} {2} {3} {4}>".format(

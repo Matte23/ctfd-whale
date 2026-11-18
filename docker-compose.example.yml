@@ -1,9 +1,13 @@
-version: '3.7'
+# Example deployment of CTFd 3.8.9 with ctfd-whale, based on CTFd's own
+# docker-compose.yml. Copy it over CTFd's docker-compose.yml.
+#
+# Defaults it matches (plugin settings): docker_use_swarm = false,
+# docker_auto_connect_network = ctfd_containers, frp_api_url = http://frpc:7400,
+# frp_http_port = 8080, frp_direct_port_minimum/maximum = 10000/10100.
 
 services:
   ctfd:
     build: .
-    user: root
     restart: always
     ports:
       - "8000:8000"
@@ -21,14 +25,34 @@ services:
       - .data/CTFd/uploads:/var/uploads
       - .:/opt/CTFd:ro
       - /var/run/docker.sock:/var/run/docker.sock
+    # CTFd keeps running as its normal non-root user; it only gets the group
+    # owning the docker socket. Find its id with: stat -c %g /var/run/docker.sock
+    # Note: access to the docker API is equivalent to root on the host anyway,
+    # so keep CTFd and its admin accounts as protected as the host itself.
+    group_add:
+      - "${DOCKER_GID:-999}"
     depends_on:
-      - db
+      permissions:
+        condition: service_completed_successfully
+      db:
+        condition: service_started
+      cache:
+        condition: service_started
     networks:
         default:
         internal:
 
+  # TODO: CTFd 4.0 Migrate to named volumes. Users will likely need to manually migrate existing files
+  permissions:
+    image: alpine:3.23
+    user: root
+    volumes:
+      - .data/CTFd/logs:/var/log/CTFd
+      - .data/CTFd/uploads:/var/uploads
+    command: chown -R 1001:1001 /var/uploads /var/log/CTFd
+
   nginx:
-    image: nginx:1.17
+    image: nginx:stable
     restart: always
     volumes:
       - ./conf/nginx/http.conf:/etc/nginx/nginx.conf
@@ -38,13 +62,14 @@ services:
       - ctfd
 
   db:
-    image: mariadb:10.4.12
+    image: mariadb:10.11
     restart: always
     environment:
-      - MYSQL_ROOT_PASSWORD=ctfd
-      - MYSQL_USER=ctfd
-      - MYSQL_PASSWORD=ctfd
-      - MYSQL_DATABASE=ctfd
+      - MARIADB_ROOT_PASSWORD=ctfd
+      - MARIADB_USER=ctfd
+      - MARIADB_PASSWORD=ctfd
+      - MARIADB_DATABASE=ctfd
+      - MARIADB_AUTO_UPGRADE=1
     volumes:
       - .data/mysql:/var/lib/mysql
     networks:
@@ -60,35 +85,35 @@ services:
     networks:
         internal:
 
+  # Official frp images, pinned. Configs: copy docs/frp/frps.toml and
+  # docs/frp/frpc.toml of the plugin to conf/frp/ and change the token and
+  # the password.
   frpc:
-    image: frankli0324/frp:frpc
+    image: fatedier/frpc:v0.72.0
     restart: always
-    command: [
-      "--server_addr=frps",
-      "--server_port=7000",
-      "--token=your_token",
-      "--admin_addr=0.0.0.0",
-      "--admin_port=7000",
-      "--admin_user=frank",
-      "--admin_pwd=qwer",
-    ]
+    command: ["-c", "/etc/frp/frpc.toml"]
+    volumes:
+      - ./conf/frp/frpc.toml:/etc/frp/frpc.toml:ro
+      # the store: proxies survive frpc restarts
+      - .data/frpc:/var/lib/frpc
+    depends_on:
+      - frps
     networks:
       frp:
       internal:
       containers:
 
   frps:
-    image: frankli0324/frp:frps
+    image: fatedier/frps:v0.72.0
     restart: always
-    command: [
-      "--bind_addr=0.0.0.0",
-      "--bind_port=7000",
-      "--token=your_token",
-      "--subdomain_host=127.0.0.1.nip.io",
-      "--vhost_http_port=8080",
-    ]
+    command: ["-c", "/etc/frp/frps.toml"]
+    volumes:
+      - ./conf/frp/frps.toml:/etc/frp/frps.toml:ro
     ports:
+      # HTTP challenges (vhostHTTPPort)
       - 8080:8080
+      # direct (TCP) challenges: the plugin's direct port range
+      - 10000-10100:10000-10100
     networks:
       frp:
       default:
@@ -99,7 +124,11 @@ networks:
         internal: true
     frp:
         internal: true
+    # Challenge containers are attached to this network so frpc can reach
+    # them. Fixed name: it must match the docker_auto_connect_network setting.
+    # With docker_use_swarm = true, use "driver: overlay" and
+    # "attachable: true" instead (requires `docker swarm init`).
     containers:
+        name: ctfd_containers
         internal: true
-        driver: overlay
-        attachable: true
+        driver: bridge
