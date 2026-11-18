@@ -138,9 +138,15 @@ CTFd._internal.challenge.render = null;
     };
 
     CTFd._internal.challenge.postRender = function () {
-        $("#whale-button-boot").on("click", CTFd._internal.challenge.boot);
-        $("#whale-button-destroy").on("click", CTFd._internal.challenge.destroy);
-        $("#whale-button-renew").on("click", CTFd._internal.challenge.renew);
+        // The core theme inserts the challenge view (Alpine) after postRender
+        // runs, so the buttons don't exist yet: delegate from the document.
+        // The script is loaded again for every challenge opened: replace the
+        // previous handlers instead of stacking them.
+        $(document)
+            .off(".whale")
+            .on("click.whale", "#whale-button-boot", CTFd._internal.challenge.boot)
+            .on("click.whale", "#whale-button-destroy", CTFd._internal.challenge.destroy)
+            .on("click.whale", "#whale-button-renew", CTFd._internal.challenge.renew);
         loadInfo();
     };
 })();
